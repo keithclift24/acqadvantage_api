@@ -2,6 +2,7 @@ import requests
 import os
 from flask import Flask, jsonify, request, Response, stream_with_context
 import openai
+import stripe
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -10,6 +11,7 @@ load_dotenv()
 # --- INITIALIZE SERVICES ---
 app = Flask(__name__)
 openai_client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
 
 # --- CORE LOGIC FUNCTIONS ---
@@ -223,6 +225,76 @@ def ask():
 
     except Exception as e:
         print(f"Error in ask endpoint: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@app.route('/create-checkout-session', methods=['POST'])
+def create_checkout_session():
+    """
+    Creates a Stripe checkout session for subscription plans.
+    """
+    # 1. Get user_token from Authorization header
+    user_token = request.headers.get('Authorization')
+    if not user_token:
+        return jsonify({'error': 'Authorization token is missing'}), 401
+
+    # 2. Get plan_type from JSON request body
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Request body is missing'}), 400
+    
+    plan_type = data.get('plan_type')
+    if not plan_type or plan_type not in ['monthly', 'annual']:
+        return jsonify({'error': 'plan_type must be either "monthly" or "annual"'}), 400
+
+    # 3. Define hardcoded Stripe Price IDs
+    price_ids = {
+        'monthly': 'price_1MonthlyPlanID',
+        'annual': 'price_1AnnualPlanID'
+    }
+
+    try:
+        # 4. Retrieve current user from Backendless
+        backendless_url = "https://api.backendless.com/0EB3F73D-1225-30F9-FFB8-CFD226E65F00/88151BAC-048B-492B-9FE3-3BE69C59937A/users/currentuser"
+        headers = {
+            'user-token': user_token,
+            'Content-Type': 'application/json'
+        }
+        
+        user_response = requests.get(backendless_url, headers=headers)
+        user_response.raise_for_status()
+        user_data = user_response.json()
+        
+        # Get the user's objectId
+        user_object_id = user_data.get('objectId')
+        if not user_object_id:
+            return jsonify({'error': 'Unable to retrieve user objectId'}), 400
+
+        # 5. Create Stripe checkout session
+        checkout_session = stripe.checkout.Session.create(
+            mode='subscription',
+            line_items=[{
+                'price': price_ids[plan_type],
+                'quantity': 1,
+            }],
+            client_reference_id=user_object_id,
+            success_url='https://acqadvantage.com/success',
+            cancel_url='https://acqadvantage.com/cancel',
+        )
+
+        # 6. Return the checkout URL
+        return jsonify({'checkout_url': checkout_session.url})
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error retrieving user from Backendless: {e}")
+        return jsonify({'error': 'Failed to retrieve user information'}), 500
+    
+    except stripe.error.StripeError as e:
+        print(f"Stripe error: {e}")
+        return jsonify({'error': 'Failed to create checkout session'}), 500
+    
+    except Exception as e:
+        print(f"Unexpected error in create_checkout_session: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
 
