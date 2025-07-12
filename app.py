@@ -298,6 +298,97 @@ def create_checkout_session():
         return jsonify({'error': 'Internal server error'}), 500
 
 
+@app.route('/stripe-webhook', methods=['POST'])
+def stripe_webhook():
+    """
+    Handles Stripe webhook events, specifically checkout.session.completed.
+    """
+    # 1. Get the raw request body and Stripe signature
+    payload = request.get_data()
+    sig_header = request.headers.get('Stripe-Signature')
+    
+    if not sig_header:
+        return jsonify({'error': 'Missing Stripe-Signature header'}), 400
+
+    try:
+        # 2. Verify the webhook signature
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, os.getenv('STRIPE_WEBHOOK_SECRET')
+        )
+    except stripe.error.SignatureVerificationError as e:
+        print(f"Webhook signature verification failed: {e}")
+        return jsonify({'error': 'Invalid signature'}), 400
+    except Exception as e:
+        print(f"Error constructing webhook event: {e}")
+        return jsonify({'error': 'Webhook error'}), 400
+
+    # 3. Handle the checkout.session.completed event
+    if event['type'] == 'checkout.session.completed':
+        try:
+            session = event['data']['object']
+            
+            # Extract required data from the session
+            client_reference_id = session.get('client_reference_id')  # User's objectId
+            subscription_id = session.get('subscription')
+            
+            if not client_reference_id or not subscription_id:
+                print("Missing client_reference_id or subscription_id in webhook")
+                return jsonify({}), 200
+            
+            print(f"Processing checkout completion for user: {client_reference_id}")
+            
+            # 4. Connect to Backendless to update subscription
+            base_url = "https://toughquilt.backendless.app/api"
+            
+            # First, we need to get an admin token or use a service account
+            # For now, we'll use the REST API without authentication for the webhook
+            # In production, you should use a service account or admin credentials
+            
+            # Query the Subscriptions table to find the trialing subscription
+            query_url = f"{base_url}/data/Subscriptions"
+            query_params = {
+                'where': f"ownerId = '{client_reference_id}' AND status = 'trialing'"
+            }
+            
+            try:
+                # Find the trialing subscription record
+                query_response = requests.get(query_url, params=query_params)
+                query_response.raise_for_status()
+                subscriptions = query_response.json()
+                
+                if not subscriptions or len(subscriptions) == 0:
+                    print(f"Warning: No trialing subscription found for user {client_reference_id}")
+                    return jsonify({}), 200
+                
+                # Get the first (should be only) trialing subscription
+                subscription_record = subscriptions[0]
+                subscription_object_id = subscription_record['objectId']
+                
+                # Update the subscription record
+                update_url = f"{base_url}/data/Subscriptions/{subscription_object_id}"
+                update_payload = {
+                    'stripeSubscriptionId': subscription_id,
+                    'status': 'active'
+                }
+                
+                update_response = requests.put(update_url, json=update_payload)
+                update_response.raise_for_status()
+                
+                print(f"Successfully updated subscription {subscription_object_id} to active status")
+                
+            except requests.exceptions.RequestException as e:
+                print(f"Error updating subscription in Backendless: {e}")
+                # Don't fail the webhook - Stripe expects a 200 response
+                return jsonify({}), 200
+                
+        except Exception as e:
+            print(f"Error processing checkout.session.completed event: {e}")
+            return jsonify({}), 200
+    
+    # 5. Return 200 status to acknowledge receipt
+    return jsonify({}), 200
+
+
 @app.route('/')
 def health_check():
     """A simple health check route."""
