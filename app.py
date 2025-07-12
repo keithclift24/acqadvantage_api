@@ -100,6 +100,51 @@ def get_or_create_thread(user_token, user_object_id):
         return None
 
 
+def reset_user_thread(user_token, user_object_id):
+    """
+    Resets a user's conversation thread by deleting the existing OpenAI thread
+    and clearing the currentThreadId from Backendless.
+    
+    Args:
+        user_token (str): The user's authentication token
+        user_object_id (str): The user's objectId in Backendless
+        
+    Returns:
+        bool: True on success, False on failure
+    """
+    base_url = "https://toughquilt.backendless.app/api"
+    headers = {
+        'user-token': user_token,
+        'Content-Type': 'application/json'
+    }
+
+    try:
+        # 1. Fetch the user's data from Backendless
+        user_url = f"{base_url}/data/Users/{user_object_id}"
+        user_response = requests.get(user_url, headers=headers)
+        user_response.raise_for_status()
+        user_data = user_response.json()
+
+        # 2. Check if a currentThreadId exists and is not null
+        current_thread_id = user_data.get('currentThreadId')
+        if current_thread_id:
+            # 3. Delete the thread from OpenAI
+            openai_client.beta.threads.delete(thread_id=current_thread_id)
+            print(f"Successfully deleted OpenAI thread: {current_thread_id}")
+
+        # 4. Update the user's record in Backendless, setting currentThreadId to None
+        update_payload = {'currentThreadId': None}
+        update_response = requests.put(user_url, json=update_payload, headers=headers)
+        update_response.raise_for_status()
+
+        print(f"Successfully reset thread for user: {user_object_id}")
+        return True
+
+    except Exception as e:
+        print(f"Error in reset_user_thread: {e}")
+        return False
+
+
 # --- API ENDPOINTS ---
 @app.route('/start_chat', methods=['POST'])
 def start_chat():
@@ -189,4 +234,4 @@ def health_check():
 
 # --- MAIN EXECUTION ---
 if __name__ == '__main__':
-    app.run(debug=True)  
+    app.run(debug=True)
