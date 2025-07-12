@@ -20,7 +20,7 @@ Content-Type: application/json
 }
 
 
-### 3. Ask a Question
+### 3. Ask a Question 
 POST http://127.0.0.1:5000/ask
 user-token: {{loginRequest.response.headers.user-token}}
 Content-Type: application/json
