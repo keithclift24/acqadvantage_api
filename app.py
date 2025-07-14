@@ -233,44 +233,31 @@ def create_checkout_session():
     """
     Creates a Stripe checkout session for subscription plans.
     """
-    # 1. Get user_token from Authorization header
-    user_token = request.headers.get('Authorization')
-    if not user_token:
-        return jsonify({'error': 'Authorization token is missing'}), 401
-
-    # 2. Get plan_type from JSON request body
+    # 1. Get plan_type and objectId from JSON request body
     data = request.get_json()
     if not data:
         return jsonify({'error': 'Request body is missing'}), 400
     
     plan_type = data.get('plan_type')
-    if not plan_type or plan_type not in ['monthly', 'annual']:
-        return jsonify({'error': 'plan_type must be either "monthly" or "annual"'}), 400
+    user_object_id = data.get('objectId')
+    
+    if not plan_type:
+        return jsonify({'error': 'plan_type is required'}), 400
+    
+    if not user_object_id:
+        return jsonify({'error': 'objectId is required'}), 400
 
-    # 3. Define hardcoded Stripe Price IDs
+    # 2. Dictionary to look up Stripe Price ID based on plan_type
     price_ids = {
-        'monthly': 'price_1MonthlyPlanID',
-        'annual': 'price_1AnnualPlanID'
+        'monthly': 'price_..._monthly',
+        'annual': 'price_..._annual'
     }
+    
+    if plan_type not in price_ids:
+        return jsonify({'error': 'Invalid plan_type'}), 400
 
     try:
-        # 4. Retrieve current user from Backendless
-        backendless_url = "https://api.backendless.com/0EB3F73D-1225-30F9-FFB8-CFD226E65F00/88151BAC-048B-492B-9FE3-3BE69C59937A/users/currentuser"
-        headers = {
-            'user-token': user_token,
-            'Content-Type': 'application/json'
-        }
-        
-        user_response = requests.get(backendless_url, headers=headers)
-        user_response.raise_for_status()
-        user_data = user_response.json()
-        
-        # Get the user's objectId
-        user_object_id = user_data.get('objectId')
-        if not user_object_id:
-            return jsonify({'error': 'Unable to retrieve user objectId'}), 400
-
-        # 5. Create Stripe checkout session
+        # 3. Create Stripe checkout session
         checkout_session = stripe.checkout.Session.create(
             mode='subscription',
             line_items=[{
@@ -278,17 +265,13 @@ def create_checkout_session():
                 'quantity': 1,
             }],
             client_reference_id=user_object_id,
-            success_url='https://acqadvantage.com/success',
-            cancel_url='https://acqadvantage.com/cancel',
+            success_url='https://acqadvantage.com/?page=home&session_id={CHECKOUT_SESSION_ID}',
+            cancel_url='https://acqadvantage.com/?page=home',
         )
 
-        # 6. Return the checkout URL
+        # 4. Return the checkout URL
         return jsonify({'checkout_url': checkout_session.url})
 
-    except requests.exceptions.RequestException as e:
-        print(f"Error retrieving user from Backendless: {e}")
-        return jsonify({'error': 'Failed to retrieve user information'}), 500
-    
     except stripe.error.StripeError as e:
         print(f"Stripe error: {e}")
         return jsonify({'error': 'Failed to create checkout session'}), 500
@@ -311,7 +294,7 @@ def stripe_webhook():
         return jsonify({'error': 'Missing Stripe-Signature header'}), 400
 
     try:
-        # 2. Verify the webhook signature
+        # 2. Securely verify the webhook using Stripe's construct_event
         event = stripe.Webhook.construct_event(
             payload, sig_header, os.getenv('STRIPE_WEBHOOK_SECRET')
         )
@@ -322,53 +305,47 @@ def stripe_webhook():
         print(f"Error constructing webhook event: {e}")
         return jsonify({'error': 'Webhook error'}), 400
 
-    # 3. Handle the checkout.session.completed event
+    # 3. Check if the event type is checkout.session.completed
     if event['type'] == 'checkout.session.completed':
         try:
             session = event['data']['object']
             
-            # Extract required data from the session
+            # 4. Extract client_reference_id (user's objectId) and subscription ID
             client_reference_id = session.get('client_reference_id')  # User's objectId
             subscription_id = session.get('subscription')
             
             if not client_reference_id or not subscription_id:
                 print("Missing client_reference_id or subscription_id in webhook")
-                return jsonify({}), 200
+                return jsonify({'status': 'success'}), 200
             
             print(f"Processing checkout completion for user: {client_reference_id}")
             
-            # 4. Connect to Backendless to update subscription
+            # 5. Find the subscription record in Backendless where ownerId matches objectId
             base_url = "https://toughquilt.backendless.app/api"
-            
-            # First, we need to get an admin token or use a service account
-            # For now, we'll use the REST API without authentication for the webhook
-            # In production, you should use a service account or admin credentials
-            
-            # Query the Subscriptions table to find the trialing subscription
             query_url = f"{base_url}/data/Subscriptions"
             query_params = {
-                'where': f"ownerId = '{client_reference_id}' AND status = 'trialing'"
+                'where': f"ownerId = '{client_reference_id}'"
             }
             
             try:
-                # Find the trialing subscription record
+                # Find the subscription record by ownerId
                 query_response = requests.get(query_url, params=query_params)
                 query_response.raise_for_status()
                 subscriptions = query_response.json()
                 
                 if not subscriptions or len(subscriptions) == 0:
-                    print(f"Warning: No trialing subscription found for user {client_reference_id}")
-                    return jsonify({}), 200
+                    print(f"Warning: No subscription found for user {client_reference_id}")
+                    return jsonify({'status': 'success'}), 200
                 
-                # Get the first (should be only) trialing subscription
+                # Get the subscription record
                 subscription_record = subscriptions[0]
                 subscription_object_id = subscription_record['objectId']
                 
-                # Update the subscription record
+                # 6. Update the subscription record: set status to 'active' and save Stripe subscription ID
                 update_url = f"{base_url}/data/Subscriptions/{subscription_object_id}"
                 update_payload = {
-                    'stripeSubscriptionId': subscription_id,
-                    'status': 'active'
+                    'status': 'active',
+                    'stripeSubscriptionId': subscription_id
                 }
                 
                 update_response = requests.put(update_url, json=update_payload)
@@ -378,15 +355,15 @@ def stripe_webhook():
                 
             except requests.exceptions.RequestException as e:
                 print(f"Error updating subscription in Backendless: {e}")
-                # Don't fail the webhook - Stripe expects a 200 response
-                return jsonify({}), 200
+                # Don't fail the webhook - return success to acknowledge receipt
+                return jsonify({'status': 'success'}), 200
                 
         except Exception as e:
             print(f"Error processing checkout.session.completed event: {e}")
-            return jsonify({}), 200
+            return jsonify({'status': 'success'}), 200
     
-    # 5. Return 200 status to acknowledge receipt
-    return jsonify({}), 200
+    # 7. Return success response to acknowledge receipt of the webhook
+    return jsonify({'status': 'success'}), 200
 
 
 @app.route('/')
