@@ -258,12 +258,6 @@ def reset_thread():
 
 @app.route('/create-checkout-session', methods=['POST'])
 def create_checkout_session():
-    stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
-    print("--- CHECKOUT ENDPOINT V2 RUNNING ---")
-    """
-    Creates a Stripe checkout session for subscription plans.
-    """
-    # 1. Get plan_type and objectId from JSON request body
     data = request.get_json()
     if not data:
         return jsonify({'error': 'Request body is missing'}), 400
@@ -271,44 +265,43 @@ def create_checkout_session():
     plan_type = data.get('planType')
     user_object_id = data.get('objectId')
     
-    if not plan_type:
-        return jsonify({'error': 'plan_type is required'}), 400
-    
-    if not user_object_id:
-        return jsonify({'error': 'objectId is required'}), 400
+    if not plan_type or not user_object_id:
+        return jsonify({'error': 'planType and objectId are required'}), 400
 
-    # 2. Dictionary to look up Stripe Price ID based on plan_type
-    # Replace these placeholder price IDs with actual Price IDs from your Stripe dashboard
     price_ids = {
-        'monthly': 'prprice_1Rl2mc2Lfw5u3Q4QuJGFFgiG',  # Replace with actual monthly price ID
-        'annual': 'price_1Rl2pB2Lfw5u3Q4QFpW9Olha'    # Replace with actual annual price ID
+        'monthly': 'price_1Rl2mc2Lfw5u3Q4QuJGFFgiG',
+        'annual': 'price_1Rl2pB2Lfw5u3Q4QFpW9Olha'
     }
-    
+
     if plan_type not in price_ids:
         return jsonify({'error': 'Invalid plan_type'}), 400
 
     try:
-        # 3. Create Stripe checkout session
-        checkout_session = stripe.checkout.Session.create(
-            mode='subscription',
-            line_items=[{
-                'price': price_ids[plan_type],
-                'quantity': 1,
-            }],
-            client_reference_id=user_object_id,
-            success_url='https://acqadvantage.com/?page=home&session_id={CHECKOUT_SESSION_ID}',
-            cancel_url='https://acqadvantage.com/?page=home',
+        stripe_key = os.getenv('STRIPE_SECRET_KEY')
+        headers = {
+            'Authorization': f'Bearer {stripe_key}',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+        payload = {
+            'mode': 'subscription',
+            'success_url': 'https://acqadvantage.com/?payment=success',
+            'cancel_url': 'https://acqadvantage.com/?page=home',
+            'client_reference_id': user_object_id,
+            'line_items[0][price]': price_ids[plan_type],
+            'line_items[0][quantity]': '1'
+        }
+        
+        response = requests.post(
+            'https://api.stripe.com/v1/checkout/sessions',
+            headers=headers,
+            data=payload
         )
+        response.raise_for_status()
+        session = response.json()
+        return jsonify({'id': session['id']})
 
-        # 4. Return the session ID
-        return jsonify({'id': checkout_session.id})
-
-    except stripe.error.StripeError as e:
-        print(f"Stripe error: {e}")
-        return jsonify({'error': 'Failed to create checkout session'}), 500
-    
     except Exception as e:
-        print(f"Unexpected error in create_checkout_session: {e}")
+        print(f"Error creating direct Stripe session: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
 
