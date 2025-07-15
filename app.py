@@ -13,7 +13,6 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 openai_client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
 
 # --- CORE LOGIC FUNCTIONS ---
@@ -259,6 +258,7 @@ def reset_thread():
 
 @app.route('/create-checkout-session', methods=['POST'])
 def create_checkout_session():
+    stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
     print("--- CHECKOUT ENDPOINT V2 RUNNING ---")
     """
     Creates a Stripe checkout session for subscription plans.
