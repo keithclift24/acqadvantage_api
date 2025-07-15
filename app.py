@@ -277,8 +277,8 @@ def create_checkout_session():
     # 2. Dictionary to look up Stripe Price ID based on plan_type
     # Replace these placeholder price IDs with actual Price IDs from your Stripe dashboard
     price_ids = {
-        'monthly': 'price_1234567890abcdef_monthly',  # Replace with actual monthly price ID
-        'annual': 'price_1234567890abcdef_annual'    # Replace with actual annual price ID
+        'monthly': 'prprice_1Rl2mc2Lfw5u3Q4QuJGFFgiG',  # Replace with actual monthly price ID
+        'annual': 'price_1Rl2pB2Lfw5u3Q4QFpW9Olha'    # Replace with actual annual price ID
     }
     
     if plan_type not in price_ids:
