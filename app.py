@@ -259,6 +259,7 @@ def reset_thread():
 
 @app.route('/create-checkout-session', methods=['POST'])
 def create_checkout_session():
+    print("--- CHECKOUT ENDPOINT V2 RUNNING ---")
     """
     Creates a Stripe checkout session for subscription plans.
     """
