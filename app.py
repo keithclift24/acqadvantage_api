@@ -35,7 +35,7 @@ def stream_assistant_response(thread_id, user_prompt):
             content=user_prompt
         )
         
-        # Create a streaming run for the assistant
+        # Create a streaming run for the assistant 
         stream = openai_client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id='asst_QUel0QQc2NvKSYZMBCgtStMb',
