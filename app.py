@@ -248,9 +248,10 @@ def create_checkout_session():
         return jsonify({'error': 'objectId is required'}), 400
 
     # 2. Dictionary to look up Stripe Price ID based on plan_type
+    # Replace these placeholder price IDs with actual Price IDs from your Stripe dashboard
     price_ids = {
-        'monthly': 'price_..._monthly',
-        'annual': 'price_..._annual'
+        'monthly': 'price_1234567890abcdef_monthly',  # Replace with actual monthly price ID
+        'annual': 'price_1234567890abcdef_annual'    # Replace with actual annual price ID
     }
     
     if plan_type not in price_ids:
@@ -269,8 +270,8 @@ def create_checkout_session():
             cancel_url='https://acqadvantage.com/?page=home',
         )
 
-        # 4. Return the checkout URL
-        return jsonify({'checkout_url': checkout_session.url})
+        # 4. Return the session ID
+        return jsonify({'id': checkout_session.id})
 
     except stripe.error.StripeError as e:
         print(f"Stripe error: {e}")
