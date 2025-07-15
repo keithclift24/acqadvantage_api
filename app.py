@@ -267,7 +267,7 @@ def create_checkout_session():
     if not data:
         return jsonify({'error': 'Request body is missing'}), 400
     
-    plan_type = data.get('plan_type')
+    plan_type = data.get('planType')
     user_object_id = data.get('objectId')
     
     if not plan_type:
