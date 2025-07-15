@@ -228,6 +228,33 @@ def ask():
         return jsonify({'error': 'Internal server error'}), 500
 
 
+@app.route('/reset_thread', methods=['POST'])
+def reset_thread():
+    """
+    Endpoint to reset a user's conversation thread.
+    """
+    # 1. Get user-token from headers
+    user_token = request.headers.get('user-token')
+    if not user_token:
+        return jsonify({'error': 'User token is missing'}), 401
+
+    # 2. Get objectId from JSON request body
+    data = request.get_json()
+    if not data or 'objectId' not in data:
+        return jsonify({'error': 'objectId is missing from request body'}), 400
+
+    user_object_id = data['objectId']
+    
+    # 3. Call the existing reset_user_thread function
+    success = reset_user_thread(user_token, user_object_id)
+    
+    # 4. Return success or failure response
+    if success:
+        return jsonify({'status': 'success', 'message': 'Thread reset successfully'})
+    else:
+        return jsonify({'status': 'failure', 'message': 'Failed to reset thread'}), 500
+
+
 @app.route('/create-checkout-session', methods=['POST'])
 def create_checkout_session():
     """
