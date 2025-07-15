@@ -4,12 +4,14 @@ from flask import Flask, jsonify, request, Response, stream_with_context
 import openai
 import stripe
 from dotenv import load_dotenv
+from flask_cors import CORS
 
 # Load environment variables from .env file
 load_dotenv()
 
 # --- INITIALIZE SERVICES ---
 app = Flask(__name__)
+CORS(app)
 openai_client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
