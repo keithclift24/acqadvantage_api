@@ -6,7 +6,7 @@ import stripe
 from dotenv import load_dotenv
 from flask_cors import CORS
 
-# Load environment variables from .env file
+# Load environment variables from .env file 
 load_dotenv()
 
 # --- INITIALIZE SERVICES ---
