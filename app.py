@@ -298,7 +298,7 @@ def create_checkout_session():
         )
         response.raise_for_status()
         session = response.json()
-        return jsonify({'id': session['id']})
+        return jsonify({'checkout_url': session['url']})
 
     except Exception as e:
         print(f"Error creating direct Stripe session: {e}")
