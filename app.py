@@ -305,6 +305,87 @@ def create_checkout_session():
         return jsonify({'error': 'Internal server error'}), 500
 
 
+@app.route('/verify-payment-session', methods=['POST'])
+def verify_payment_session():
+    """
+    Verifies a Stripe session ID and activates the user's subscription if payment is complete.
+    """
+    # 1. Get the JSON request body
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Request body is missing'}), 400
+    
+    session_id = data.get('session_id')
+    if not session_id:
+        return jsonify({'error': 'session_id is required'}), 400
+
+    try:
+        # 2. Initialize Stripe with the secret key
+        stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
+        
+        # 3. Retrieve the session object from Stripe
+        session = stripe.checkout.Session.retrieve(session_id)
+        
+        # 4. Check if payment was successful
+        if session.status != 'complete' or session.payment_status != 'paid':
+            return jsonify({
+                'error': 'Payment not successful',
+                'session_status': session.status,
+                'payment_status': session.payment_status
+            }), 400
+        
+        # 5. Extract client_reference_id (user's objectId) and subscription ID
+        client_reference_id = session.client_reference_id
+        subscription_id = session.subscription
+        
+        if not client_reference_id or not subscription_id:
+            return jsonify({'error': 'Missing client_reference_id or subscription_id in session'}), 400
+        
+        # 6. Connect to Backendless and update the subscription record
+        base_url = "https://toughquilt.backendless.app/api"
+        query_url = f"{base_url}/data/Subscriptions"
+        query_params = {
+            'where': f"ownerId.objectId = '{client_reference_id}'"
+        }
+        
+        # Find the subscription record by ownerId
+        query_response = requests.get(query_url, params=query_params)
+        query_response.raise_for_status()
+        subscriptions = query_response.json()
+        
+        if not subscriptions or len(subscriptions) == 0:
+            return jsonify({'error': f'No subscription found for user {client_reference_id}'}), 404
+        
+        # Get the subscription record
+        subscription_record = subscriptions[0]
+        subscription_object_id = subscription_record['objectId']
+        
+        # 7. Update the subscription record: set status to 'active' and save Stripe subscription ID
+        update_url = f"{base_url}/data/Subscriptions/{subscription_object_id}"
+        update_payload = {
+            'status': 'active',
+            'stripeSubscriptionId': subscription_id
+        }
+        
+        update_response = requests.put(update_url, json=update_payload)
+        update_response.raise_for_status()
+        
+        print(f"Successfully verified payment and activated subscription {subscription_object_id}")
+        
+        # 8. Return success response
+        return jsonify({'status': 'success'}), 200
+        
+    except stripe.error.StripeError as e:
+        print(f"Stripe error in verify_payment_session: {e}")
+        return jsonify({'error': f'Stripe error: {str(e)}'}), 400
+    except requests.exceptions.RequestException as e:
+        print(f"Error updating subscription in Backendless: {e}")
+        return jsonify({'error': 'Database error'}), 500
+    except Exception as e:
+        print(f"Unexpected error in verify_payment_session: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
 @app.route('/stripe-webhook', methods=['POST'])
 def stripe_webhook():
     """
@@ -348,7 +429,7 @@ def stripe_webhook():
             base_url = "https://toughquilt.backendless.app/api"
             query_url = f"{base_url}/data/Subscriptions"
             query_params = {
-                'where': f"ownerId = '{client_reference_id}'"
+                'where': f"ownerId.objectId = '{client_reference_id}'"
             }
             
             try:
