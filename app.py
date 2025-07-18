@@ -1,9 +1,9 @@
 import requests
 import os
-from flask import Flask, jsonify, request, Response, stream_with_context # Make sure stream_with_context is imported
+from flask import Flask, jsonify, request, Response, stream_with_context # Ensure stream_with_context is imported
 import openai
 import json
-import time # Import the time module for polling 
+import time 
 import stripe
 from dotenv import load_dotenv
 from flask_cors import CORS
@@ -22,37 +22,35 @@ stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 def generate_structured_response(thread_id, user_prompt):
     """
     Generator function that polls the assistant run and yields the final JSON payload.
-    This prevents client-side timeouts for long-running assistant tasks.
+    It sends a whitespace "heartbeat" every second to prevent client-side timeouts.
     """
     try:
-        # Create a new message in the thread
         openai_client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
             content=user_prompt
         )
         
-        # Create a non-streaming run
         run = openai_client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id='asst_QUel0QQc2NvKSYZMBCgtStMb' # Your Assistant ID
         )
 
-        # Poll for the run to complete
+        # Poll for the run to complete, sending a heartbeat
         while run.status in ['queued', 'in_progress', 'cancelling']:
-            time.sleep(1) # Wait for 1 second before checking again
+            time.sleep(1) 
             run = openai_client.beta.threads.runs.retrieve(
                 thread_id=thread_id,
                 run_id=run.id
             )
-            # Optional: you could yield a progress indicator here if you wanted
-            # yield ' ' # This acts as a heartbeat to keep the connection alive
+            # --- HEARTBEAT ---
+            # Yield a single space to keep the connection alive.
+            yield ' ' 
 
         if run.status == 'completed':
             messages = openai_client.beta.threads.messages.list(thread_id=thread_id)
             assistant_message_content = messages.data[0].content[0].text.value
             
-            # --- Robust JSON Extraction ---
             try:
                 start_index = assistant_message_content.index('{')
                 end_index = assistant_message_content.rindex('}') + 1
@@ -71,30 +69,20 @@ def generate_structured_response(thread_id, user_prompt):
 
 
 def get_or_create_thread(user_token, user_object_id):
-    """
-    Gets a user's thread_id from Backendless using their objectId,
-    or creates a new one.
-    """
     base_url = "https://toughquilt.backendless.app/api"
-    headers = {
-        'user-token': user_token,
-        'Content-Type': 'application/json'
-    }
+    headers = {'user-token': user_token, 'Content-Type': 'application/json'}
     try:
         user_url = f"{base_url}/data/Users/{user_object_id}"
         user_response = requests.get(user_url, headers=headers)
         user_response.raise_for_status()
         user_data = user_response.json()
         if 'currentThreadId' in user_data and user_data['currentThreadId']:
-            print(f"Found existing thread ID: {user_data['currentThreadId']}")
             return user_data['currentThreadId']
-        print("No existing thread ID, creating a new one.")
         thread = openai_client.beta.threads.create()
         new_thread_id = thread.id
         update_payload = {'currentThreadId': new_thread_id}
         update_response = requests.put(user_url, json=update_payload, headers=headers)
         update_response.raise_for_status()
-        print(f"Successfully created and saved new thread ID: {new_thread_id}")
         return new_thread_id
     except Exception as e:
         print(f"An unexpected error occurred in get_or_create_thread: {e}")
@@ -102,15 +90,8 @@ def get_or_create_thread(user_token, user_object_id):
 
 
 def reset_user_thread(user_token, user_object_id):
-    """
-    Resets a user's conversation thread by deleting the existing OpenAI thread
-    and clearing the currentThreadId from Backendless.
-    """
     base_url = "https://toughquilt.backendless.app/api"
-    headers = {
-        'user-token': user_token,
-        'Content-Type': 'application/json'
-    }
+    headers = {'user-token': user_token, 'Content-Type': 'application/json'}
     try:
         user_url = f"{base_url}/data/Users/{user_object_id}"
         user_response = requests.get(user_url, headers=headers)
@@ -119,11 +100,9 @@ def reset_user_thread(user_token, user_object_id):
         current_thread_id = user_data.get('currentThreadId')
         if current_thread_id:
             openai_client.beta.threads.delete(thread_id=current_thread_id)
-            print(f"Successfully deleted OpenAI thread: {current_thread_id}")
         update_payload = {'currentThreadId': None}
         update_response = requests.put(user_url, json=update_payload, headers=headers)
         update_response.raise_for_status()
-        print(f"Successfully reset thread for user: {user_object_id}")
         return True
     except Exception as e:
         print(f"Error in reset_user_thread: {e}")
@@ -133,7 +112,6 @@ def reset_user_thread(user_token, user_object_id):
 # --- API ENDPOINTS ---
 @app.route('/')
 def health_check():
-    """A simple health check route."""
     return jsonify({'status': 'API is running'})
 
 
@@ -155,10 +133,6 @@ def start_chat():
 
 @app.route('/ask', methods=['POST'])
 def ask():
-    """
-    Endpoint to ask questions. It now uses a streaming context to prevent timeouts
-    but sends a single JSON object at the end.
-    """
     user_token = request.headers.get('user-token')
     if not user_token:
         return jsonify({'error': 'User token is missing'}), 401
@@ -175,10 +149,7 @@ def ask():
         return jsonify({'error': 'prompt, thread_id, and objectId are required'}), 400
 
     base_url = "https://toughquilt.backendless.app/api"
-    headers = {
-        'user-token': user_token,
-        'Content-Type': 'application/json'
-    }
+    headers = {'user-token': user_token, 'Content-Type': 'application/json'}
     try:
         user_url = f"{base_url}/data/Users/{object_id}"
         user_response = requests.get(user_url, headers=headers)
@@ -194,7 +165,6 @@ def ask():
         update_response = requests.put(user_url, json=update_payload, headers=headers)
         update_response.raise_for_status()
 
-        # Use the new generator with stream_with_context
         return Response(stream_with_context(generate_structured_response(thread_id, prompt)), mimetype='application/json')
 
     except Exception as e:
@@ -244,10 +214,7 @@ def create_checkout_session():
             success_url='https://acqadvantage.com/?payment=success',
             cancel_url='https://acqadvantage.com/?page=home',
             client_reference_id=user_object_id,
-            line_items=[{
-                'price': price_ids[plan_type],
-                'quantity': 1,
-            }]
+            line_items=[{'price': price_ids[plan_type], 'quantity': 1}]
         )
         return jsonify({'checkout_url': session.url})
     except Exception as e:
@@ -269,11 +236,7 @@ def verify_payment_session():
         session = stripe.checkout.Session.retrieve(session_id)
         
         if session.status != 'complete' or session.payment_status != 'paid':
-            return jsonify({
-                'error': 'Payment not successful',
-                'session_status': session.status,
-                'payment_status': session.payment_status
-            }), 400
+            return jsonify({'error': 'Payment not successful'}), 400
         
         client_reference_id = session.client_reference_id
         subscription_id = session.subscription
@@ -301,12 +264,8 @@ def verify_payment_session():
         
         return jsonify({'status': 'success'}), 200
         
-    except stripe.error.StripeError as e:
-        return jsonify({'error': f'Stripe error: {str(e)}'}), 400
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': 'Database error'}), 500
     except Exception as e:
-        return jsonify({'error': 'Internal server error'}), 500
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 
 @app.route('/stripe-webhook', methods=['POST'])
@@ -321,45 +280,38 @@ def stripe_webhook():
         event = stripe.Webhook.construct_event(
             payload, sig_header, os.getenv('STRIPE_WEBHOOK_SECRET')
         )
-    except stripe.error.SignatureVerificationError as e:
-        return jsonify({'error': 'Invalid signature'}), 400
     except Exception as e:
-        return jsonify({'error': 'Webhook error'}), 400
+        return jsonify({'error': str(e)}), 400
 
     if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        client_reference_id = session.get('client_reference_id')
+        subscription_id = session.get('subscription')
+        
+        if not client_reference_id or not subscription_id:
+            return jsonify({'status': 'success'}), 200
+        
+        base_url = "https://toughquilt.backendless.app/api"
+        query_url = f"{base_url}/data/Subscriptions"
+        query_params = {'where': f"ownerId.objectId = '{client_reference_id}'"}
+        
         try:
-            session = event['data']['object']
-            client_reference_id = session.get('client_reference_id')
-            subscription_id = session.get('subscription')
+            query_response = requests.get(query_url, params=query_params)
+            query_response.raise_for_status()
+            subscriptions = query_response.json()
             
-            if not client_reference_id or not subscription_id:
+            if not subscriptions:
                 return jsonify({'status': 'success'}), 200
             
-            base_url = "https://toughquilt.backendless.app/api"
-            query_url = f"{base_url}/data/Subscriptions"
-            query_params = {'where': f"ownerId.objectId = '{client_reference_id}'"}
+            subscription_object_id = subscriptions[0]['objectId']
+            update_url = f"{base_url}/data/Subscriptions/{subscription_object_id}"
+            update_payload = {'status': 'active', 'stripeSubscriptionId': subscription_id}
             
-            try:
-                query_response = requests.get(query_url, params=query_params)
-                query_response.raise_for_status()
-                subscriptions = query_response.json()
-                
-                if not subscriptions:
-                    return jsonify({'status': 'success'}), 200
-                
-                subscription_object_id = subscriptions[0]['objectId']
-                update_url = f"{base_url}/data/Subscriptions/{subscription_object_id}"
-                update_payload = {'status': 'active', 'stripeSubscriptionId': subscription_id}
-                
-                update_response = requests.put(update_url, json=update_payload)
-                update_response.raise_for_status()
-                
-            except requests.exceptions.RequestException as e:
-                print(f"Error updating subscription in Backendless: {e}")
-                return jsonify({'status': 'success'}), 200
-                
+            update_response = requests.put(update_url, json=update_payload)
+            update_response.raise_for_status()
+            
         except Exception as e:
-            print(f"Error processing checkout.session.completed event: {e}")
+            print(f"Error in webhook updating subscription: {e}")
             return jsonify({'status': 'success'}), 200
     
     return jsonify({'status': 'success'}), 200
