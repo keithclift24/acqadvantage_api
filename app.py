@@ -3,7 +3,7 @@ import os
 from flask import Flask, jsonify, request, Response, stream_with_context # Make sure stream_with_context is imported
 import openai
 import json
-import time # Import the time module for polling
+import time # Import the time module for polling 
 import stripe
 from dotenv import load_dotenv
 from flask_cors import CORS
