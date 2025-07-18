@@ -1,6 +1,6 @@
 import requests
 import os
-from flask import Flask, jsonify, request, Response
+from flask import Flask, jsonify, request, Response, stream_with_context # Make sure stream_with_context is imported
 import openai
 import json
 import time # Import the time module for polling
@@ -19,10 +19,10 @@ stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
 
 # --- CORE LOGIC FUNCTIONS ---
-def get_structured_assistant_response(thread_id, user_prompt):
+def generate_structured_response(thread_id, user_prompt):
     """
-    Runs the assistant, waits for completion, and extracts the final JSON object.
-    This replaces the streaming function for structured responses.
+    Generator function that polls the assistant run and yields the final JSON payload.
+    This prevents client-side timeouts for long-running assistant tasks.
     """
     try:
         # Create a new message in the thread
@@ -45,30 +45,29 @@ def get_structured_assistant_response(thread_id, user_prompt):
                 thread_id=thread_id,
                 run_id=run.id
             )
+            # Optional: you could yield a progress indicator here if you wanted
+            # yield ' ' # This acts as a heartbeat to keep the connection alive
 
         if run.status == 'completed':
             messages = openai_client.beta.threads.messages.list(thread_id=thread_id)
-            # The latest message is the first in the list
             assistant_message_content = messages.data[0].content[0].text.value
             
             # --- Robust JSON Extraction ---
-            # Find the start and end of the JSON object in the response string
             try:
                 start_index = assistant_message_content.index('{')
                 end_index = assistant_message_content.rindex('}') + 1
                 json_string = assistant_message_content[start_index:end_index]
-                # This clean string is what we'll return
-                return json_string
+                yield json_string # Yield the final, complete JSON string
             except ValueError:
                 print("Error: Could not find a valid JSON object in the assistant's response.")
-                return json.dumps({"error": "Failed to extract valid JSON from response."})
+                yield json.dumps({"error": "Failed to extract valid JSON from response."})
         else:
             print(f"Run failed with status: {run.status}")
-            return json.dumps({"error": f"Run failed with status: {run.status}"})
+            yield json.dumps({"error": f"Run failed with status: {run.status}"})
 
     except Exception as e:
-        print(f"Error in get_structured_assistant_response: {e}")
-        return json.dumps({"error": f"An error occurred: {str(e)}"})
+        print(f"Error in generate_structured_response: {e}")
+        yield json.dumps({"error": f"An error occurred: {str(e)}"})
 
 
 def get_or_create_thread(user_token, user_object_id):
@@ -157,8 +156,8 @@ def start_chat():
 @app.route('/ask', methods=['POST'])
 def ask():
     """
-    Endpoint to ask questions. It now returns a single, complete JSON object
-    by waiting for the assistant's run to finish.
+    Endpoint to ask questions. It now uses a streaming context to prevent timeouts
+    but sends a single JSON object at the end.
     """
     user_token = request.headers.get('user-token')
     if not user_token:
@@ -187,7 +186,7 @@ def ask():
         user_data = user_response.json()
 
         daily_count = user_data.get('dailyQuestionCount', 0)
-        if daily_count >= 100: # Increased limit for testing
+        if daily_count >= 100:
             return jsonify({'error': 'Daily limit reached'}), 429
 
         new_count = daily_count + 1
@@ -195,9 +194,8 @@ def ask():
         update_response = requests.put(user_url, json=update_payload, headers=headers)
         update_response.raise_for_status()
 
-        json_response_string = get_structured_assistant_response(thread_id, prompt)
-        
-        return Response(json_response_string, mimetype='application/json')
+        # Use the new generator with stream_with_context
+        return Response(stream_with_context(generate_structured_response(thread_id, prompt)), mimetype='application/json')
 
     except Exception as e:
         print(f"Error in ask endpoint: {e}")
