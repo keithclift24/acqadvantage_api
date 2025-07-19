@@ -54,7 +54,7 @@ def generate_structured_response(thread_id, user_prompt):
                 run_id=run.id
             )
             # Yield a single space to keep the connection alive.
-            yield '...' 
+            yield ' ' 
 
         if run.status == 'completed':
             messages = openai_client.beta.threads.messages.list(thread_id=thread_id)
