@@ -19,53 +19,6 @@ stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
 
 # --- CORE LOGIC FUNCTIONS ---
-def generate_structured_response(thread_id, user_prompt):
-    """
-    Generator function that polls the assistant run and yields the final JSON payload.
-    It sends a whitespace "heartbeat" every second to prevent client-side timeouts.
-    """
-    try:
-        openai_client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=user_prompt
-        )
-        
-        run = openai_client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id='asst_QUel0QQc2NvKSYZMBCgtStMb' # Your Assistant ID
-        )
-
-        # Poll for the run to complete, sending a heartbeat
-        while run.status in ['queued', 'in_progress', 'cancelling']:
-            time.sleep(1) 
-            run = openai_client.beta.threads.runs.retrieve(
-                thread_id=thread_id,
-                run_id=run.id
-            )
-            # --- HEARTBEAT ---
-            # Yield a single space to keep the connection alive.
-            yield ' ' 
-
-        if run.status == 'completed':
-            messages = openai_client.beta.threads.messages.list(thread_id=thread_id)
-            assistant_message_content = messages.data[0].content[0].text.value
-            
-            try:
-                start_index = assistant_message_content.index('{')
-                end_index = assistant_message_content.rindex('}') + 1
-                json_string = assistant_message_content[start_index:end_index]
-                yield json_string # Yield the final, complete JSON string
-            except ValueError:
-                print("Error: Could not find a valid JSON object in the assistant's response.")
-                yield json.dumps({"error": "Failed to extract valid JSON from response."})
-        else:
-            print(f"Run failed with status: {run.status}")
-            yield json.dumps({"error": f"Run failed with status: {run.status}"})
-
-    except Exception as e:
-        print(f"Error in generate_structured_response: {e}")
-        yield json.dumps({"error": f"An error occurred: {str(e)}"})
 
 
 def get_or_create_thread(user_token, user_object_id):
@@ -133,6 +86,10 @@ def start_chat():
 
 @app.route('/ask', methods=['POST'])
 def ask():
+    """
+    This endpoint now starts an assistant run and immediately returns the run_id.
+    It is non-blocking and very fast.
+    """
     user_token = request.headers.get('user-token')
     if not user_token:
         return jsonify({'error': 'User token is missing'}), 401
@@ -151,25 +108,80 @@ def ask():
     base_url = "https://toughquilt.backendless.app/api"
     headers = {'user-token': user_token, 'Content-Type': 'application/json'}
     try:
+        # --- PRESERVE EXISTING USAGE LIMIT LOGIC HERE ---
         user_url = f"{base_url}/data/Users/{object_id}"
         user_response = requests.get(user_url, headers=headers)
         user_response.raise_for_status()
         user_data = user_response.json()
-
         daily_count = user_data.get('dailyQuestionCount', 0)
         if daily_count >= 100:
             return jsonify({'error': 'Daily limit reached'}), 429
-
         new_count = daily_count + 1
         update_payload = {'dailyQuestionCount': new_count}
         update_response = requests.put(user_url, json=update_payload, headers=headers)
         update_response.raise_for_status()
+        # --- END OF PRESERVED LOGIC ---
 
-        return Response(stream_with_context(generate_structured_response(thread_id, prompt)), mimetype='application/json')
+        # Create the message
+        openai_client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=prompt
+        )
+        
+        # Start the run
+        run = openai_client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id='asst_QUel0QQc2NvKSYZMBCgtStMb'
+        )
+        
+        # Immediately return the run and thread IDs
+        return jsonify({'run_id': run.id, 'thread_id': thread_id})
 
     except Exception as e:
         print(f"Error in ask endpoint: {e}")
         return jsonify({'error': 'Internal server error'}), 500
+
+
+@app.route('/check_status', methods=['GET'])
+def check_status():
+    """
+    This endpoint is polled by the client to check the status of a run.
+    """
+    run_id = request.args.get('run_id')
+    thread_id = request.args.get('thread_id')
+    
+    if not run_id or not thread_id:
+        return jsonify({'error': 'run_id and thread_id are required'}), 400
+
+    try:
+        run = openai_client.beta.threads.runs.retrieve(
+            thread_id=thread_id,
+            run_id=run_id
+        )
+
+        if run.status == 'completed':
+            messages = openai_client.beta.threads.messages.list(thread_id=thread_id)
+            assistant_message_content = messages.data[0].content[0].text.value
+            
+            try:
+                # Extract the clean JSON
+                start_index = assistant_message_content.index('{')
+                end_index = assistant_message_content.rindex('}') + 1
+                json_string = assistant_message_content[start_index:end_index]
+                response_data = json.loads(json_string)
+                return jsonify({'status': 'completed', 'response': response_data})
+            except (ValueError, json.JSONDecodeError):
+                return jsonify({'status': 'failed', 'error': 'Failed to parse JSON from assistant response.'})
+
+        elif run.status in ['queued', 'in_progress']:
+            return jsonify({'status': 'in_progress'})
+        else:
+            return jsonify({'status': 'failed', 'error': f'Run failed with status: {run.status}'})
+
+    except Exception as e:
+        print(f"Error in check_status endpoint: {e}")
+        return jsonify({'status': 'failed', 'error': 'An error occurred while checking status.'}), 500
 
 
 @app.route('/reset_thread', methods=['POST'])
