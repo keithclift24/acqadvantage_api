@@ -1,6 +1,7 @@
 import requests
 import os
 from flask import Flask, jsonify, request, Response, stream_with_context # Ensure stream_with_context is imported
+from flask_socketio import SocketIO, emit
 import openai
 import json
 import time 
@@ -14,11 +15,59 @@ load_dotenv()
 # --- INITIALIZE SERVICES ---
 app = Flask(__name__)
 CORS(app)
+socketio = SocketIO(app, cors_allowed_origins="*") 
 openai_client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
 
 # --- CORE LOGIC FUNCTIONS ---
+def run_assistant_and_emit(data):
+    """
+    This function runs in a background thread. It handles the polling and
+    emits the final result back to the client via WebSockets.
+    """
+    thread_id = data.get('thread_id')
+    prompt = data.get('prompt')
+    client_sid = data.get('sid') # The specific client to send the response to
+
+    try:
+        openai_client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=prompt
+        )
+        run = openai_client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id='asst_QUel0QQc2NvKSYZMBCgtStMb'
+        )
+
+        while run.status in ['queued', 'in_progress']:
+            time.sleep(2)
+            run = openai_client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
+
+        if run.status == 'completed':
+            messages = openai_client.beta.threads.messages.list(thread_id=thread_id)
+            assistant_message_content = messages.data[0].content[0].text.value
+            
+            try:
+                # Robust JSON extraction
+                start_index = assistant_message_content.find('{')
+                end_index = assistant_message_content.rfind('}') + 1
+                if start_index != -1 and end_index != -1:
+                    json_string = assistant_message_content[start_index:end_index]
+                    response_data = json.loads(json_string)
+                    # Emit the final data to the specific client
+                    socketio.emit('assistant_response', {'status': 'completed', 'response': response_data}, to=client_sid)
+                else:
+                    raise ValueError("No JSON object found")
+            except (ValueError, json.JSONDecodeError):
+                socketio.emit('assistant_response', {'status': 'failed', 'error': 'Failed to parse structured response.'}, to=client_sid)
+        else:
+            socketio.emit('assistant_response', {'status': 'failed', 'error': f'Run failed with status: {run.status}'}, to=client_sid)
+
+    except Exception as e:
+        print(f"Error in background task: {e}")
+        socketio.emit('assistant_response', {'status': 'failed', 'error': str(e)}, to=client_sid)
 
 
 def get_or_create_thread(user_token, user_object_id):
@@ -62,6 +111,59 @@ def reset_user_thread(user_token, user_object_id):
         return False
 
 
+# --- WEBSOCKET EVENT HANDLERS ---
+@socketio.on('connect')
+def handle_connect():
+    print(f"Client connected: {request.sid}")
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print(f"Client disconnected: {request.sid}")
+
+@socketio.on('send_message')
+def handle_send_message(data):
+    """
+    Handles incoming messages from the client via WebSocket.
+    """
+    print(f"Received message from {request.sid}: {data}")
+    # Add the client's session ID to the data for the response
+    data['sid'] = request.sid
+    
+    # --- PRESERVED USAGE LIMIT LOGIC ---
+    user_token = data.get('user_token')
+    object_id = data.get('objectId')
+
+    if not user_token or not object_id:
+        emit('assistant_response', {'status': 'failed', 'error': 'user_token and objectId are required.'})
+        return
+
+    base_url = "https://toughquilt.backendless.app/api"
+    headers = {'user-token': user_token, 'Content-Type': 'application/json'}
+    try:
+        user_url = f"{base_url}/data/Users/{object_id}"
+        user_response = requests.get(user_url, headers=headers)
+        user_response.raise_for_status()
+        user_data = user_response.json()
+        daily_count = user_data.get('dailyQuestionCount', 0)
+        if daily_count >= 100:
+            emit('assistant_response', {'status': 'failed', 'error': 'Daily limit reached'})
+            return
+        new_count = daily_count + 1
+        update_payload = {'dailyQuestionCount': new_count}
+        update_response = requests.put(user_url, json=update_payload, headers=headers)
+        update_response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"Error validating user: {e}")
+        emit('assistant_response', {'status': 'failed', 'error': 'Failed to validate user.'})
+        return
+    # --- END OF PRESERVED LOGIC ---
+
+    # Start the AI processing in a background thread
+    socketio.start_background_task(run_assistant_and_emit, data)
+    # Optionally, send an immediate acknowledgment
+    emit('message_received', {'status': 'ok', 'message': 'Processing started...'})
+
+
 # --- API ENDPOINTS ---
 @app.route('/')
 def health_check():
@@ -82,127 +184,6 @@ def start_chat():
         return jsonify({'thread_id': thread_id})
     else:
         return jsonify({'error': 'Failed to process request'}), 500
-
-
-@app.route('/ask', methods=['POST'])
-def ask():
-    """
-    This endpoint now starts an assistant run and immediately returns the run_id.
-    It is non-blocking and very fast.
-    """
-    user_token = request.headers.get('user-token')
-    if not user_token:
-        return jsonify({'error': 'User token is missing'}), 401
-
-    data = request.get_json()
-    if not data:
-        return jsonify({'error': 'Request body is missing'}), 400
-    
-    prompt = data.get('prompt')
-    thread_id = data.get('thread_id')
-    object_id = data.get('objectId')
-    
-    if not prompt or not thread_id or not object_id:
-        return jsonify({'error': 'prompt, thread_id, and objectId are required'}), 400
-
-    base_url = "https://toughquilt.backendless.app/api"
-    headers = {'user-token': user_token, 'Content-Type': 'application/json'}
-    try:
-        # --- PRESERVE EXISTING USAGE LIMIT LOGIC HERE ---
-        user_url = f"{base_url}/data/Users/{object_id}"
-        user_response = requests.get(user_url, headers=headers)
-        user_response.raise_for_status()
-        user_data = user_response.json()
-        daily_count = user_data.get('dailyQuestionCount', 0)
-        if daily_count >= 100:
-            return jsonify({'error': 'Daily limit reached'}), 429
-        new_count = daily_count + 1
-        update_payload = {'dailyQuestionCount': new_count}
-        update_response = requests.put(user_url, json=update_payload, headers=headers)
-        update_response.raise_for_status()
-        # --- END OF PRESERVED LOGIC ---
-
-        # Create the message
-        openai_client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=prompt
-        )
-        
-        # Start the run
-        run = openai_client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id='asst_QUel0QQc2NvKSYZMBCgtStMb'
-        )
-        
-        # Immediately return the run and thread IDs
-        return jsonify({'run_id': run.id, 'thread_id': thread_id})
-
-    except Exception as e:
-        print(f"Error in ask endpoint: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-
-@app.route('/check_status', methods=['GET'])
-def check_status():
-    """
-    This endpoint is polled by the client to check the status of a run.
-    """
-    run_id = request.args.get('run_id')
-    thread_id = request.args.get('thread_id')
-    
-    if not run_id or not thread_id:
-        return jsonify({'error': 'run_id and thread_id are required'}), 400
-
-    try:
-        run = openai_client.beta.threads.runs.retrieve(
-            thread_id=thread_id,
-            run_id=run_id
-        )
-
-        if run.status == 'completed':
-            messages = openai_client.beta.threads.messages.list(thread_id=thread_id)
-            assistant_message_content = messages.data[0].content[0].text.value
-            
-            try:
-                # First, try to parse the whole string directly.
-                response_data = json.loads(assistant_message_content)
-                return jsonify({'status': 'completed', 'response': response_data})
-            except json.JSONDecodeError:
-                # If direct parsing fails, fall back to substring extraction.
-                print("Direct JSON parsing failed, attempting substring extraction...")
-                try:
-                    start_index = assistant_message_content.index('{')
-                    end_index = assistant_message_content.rindex('}') + 1
-                    json_string = assistant_message_content[start_index:end_index]
-                    response_data = json.loads(json_string)
-                    return jsonify({'status': 'completed', 'response': response_data})
-                except (ValueError, json.JSONDecodeError):
-                    print(f"CRITICAL ERROR: Could not find a valid JSON object in response.")
-                    return jsonify({'status': 'failed', 'error': 'Failed to parse structured response from assistant.'})
-
-        elif run.status in ['queued', 'in_progress']:
-            return jsonify({'status': 'in_progress'})
-        
-        # --- NEW ROBUST ERROR HANDLING BLOCK ---
-        elif run.status in ['failed', 'expired', 'incomplete']:
-            error_message = f"Run ended with status: {run.status}."
-            if run.last_error:
-                error_message += f" Details: {run.last_error.message}"
-            # Check for incomplete_details, which is an object, not a direct attribute
-            elif hasattr(run, 'incomplete_details') and run.incomplete_details and hasattr(run.incomplete_details, 'reason'):
-                 error_message += f" Reason: {run.incomplete_details.reason}"
-            
-            print(f"Error: {error_message}")
-            return jsonify({'status': 'failed', 'error': error_message})
-        
-        else:
-            # A catch-all for any other unexpected status
-            return jsonify({'status': 'failed', 'error': f'Run ended with an unexpected status: {run.status}'})
-
-    except Exception as e:
-        print(f"Error in check_status endpoint: {e}")
-        return jsonify({'status': 'failed', 'error': 'An error occurred while checking status.'}), 500
 
 
 @app.route('/reset_thread', methods=['POST'])
@@ -352,4 +333,5 @@ def stripe_webhook():
 
 # --- MAIN EXECUTION ---
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Use socketio.run to start the server
+    socketio.run(app, debug=True)
