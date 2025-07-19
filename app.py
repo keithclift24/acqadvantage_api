@@ -165,14 +165,23 @@ def check_status():
             assistant_message_content = messages.data[0].content[0].text.value
             
             try:
-                # Extract the clean JSON
-                start_index = assistant_message_content.index('{')
-                end_index = assistant_message_content.rindex('}') + 1
-                json_string = assistant_message_content[start_index:end_index]
-                response_data = json.loads(json_string)
+                # First, try to parse the whole string directly, as this is the ideal case.
+                response_data = json.loads(assistant_message_content)
                 return jsonify({'status': 'completed', 'response': response_data})
-            except (ValueError, json.JSONDecodeError):
-                return jsonify({'status': 'failed', 'error': 'Failed to parse JSON from assistant response.'})
+            except json.JSONDecodeError:
+                # If direct parsing fails, it means the assistant may have added conversational text.
+                # Fall back to the substring search method as a safety net.
+                print("Direct JSON parsing failed, attempting substring extraction...")
+                try:
+                    start_index = assistant_message_content.index('{')
+                    end_index = assistant_message_content.rindex('}') + 1
+                    json_string = assistant_message_content[start_index:end_index]
+                    response_data = json.loads(json_string)
+                    return jsonify({'status': 'completed', 'response': response_data})
+                except (ValueError, json.JSONDecodeError):
+                    # If both methods fail, then there's a real issue with the response format.
+                    print(f"CRITICAL ERROR: Could not find a valid JSON object in the assistant's response. Content was: {assistant_message_content}")
+                    return jsonify({'status': 'failed', 'error': 'Failed to parse structured response from assistant.'})
 
         elif run.status in ['queued', 'in_progress']:
             return jsonify({'status': 'in_progress'})
