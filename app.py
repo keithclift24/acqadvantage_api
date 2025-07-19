@@ -22,7 +22,7 @@ stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 def generate_structured_response(thread_id, user_prompt):
     """
     Generator function that polls the assistant run and yields the final JSON payload.
-    It sends a whitespace "heartbeat" every second to prevent client-side timeouts.
+    It sends a whitespace "heartbeat" every second and has a max wait time to prevent infinite loops.
     """
     try:
         openai_client.beta.threads.messages.create(
@@ -36,16 +36,25 @@ def generate_structured_response(thread_id, user_prompt):
             assistant_id='asst_QUel0QQc2NvKSYZMBCgtStMb' # Your Assistant ID
         )
 
+        # --- MODIFICATION ---
+        max_wait_seconds = 90  # You can adjust this value (in seconds)
+        wait_time = 0
+
         # Poll for the run to complete, sending a heartbeat
         while run.status in ['queued', 'in_progress', 'cancelling']:
+            if wait_time >= max_wait_seconds:
+                print(f"Error: Run timed out after {max_wait_seconds} seconds.")
+                yield json.dumps({"error": "The request timed out while waiting for the AI response."})
+                return # Stop the function if it times out
+
             time.sleep(1) 
+            wait_time += 1
             run = openai_client.beta.threads.runs.retrieve(
                 thread_id=thread_id,
                 run_id=run.id
             )
-            # --- HEARTBEAT ---
             # Yield a single space to keep the connection alive.
-            yield ' ' 
+            yield '...' 
 
         if run.status == 'completed':
             messages = openai_client.beta.threads.messages.list(thread_id=thread_id)
