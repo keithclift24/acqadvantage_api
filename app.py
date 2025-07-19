@@ -165,12 +165,11 @@ def check_status():
             assistant_message_content = messages.data[0].content[0].text.value
             
             try:
-                # First, try to parse the whole string directly, as this is the ideal case.
+                # First, try to parse the whole string directly.
                 response_data = json.loads(assistant_message_content)
                 return jsonify({'status': 'completed', 'response': response_data})
             except json.JSONDecodeError:
-                # If direct parsing fails, it means the assistant may have added conversational text.
-                # Fall back to the substring search method as a safety net.
+                # If direct parsing fails, fall back to substring extraction.
                 print("Direct JSON parsing failed, attempting substring extraction...")
                 try:
                     start_index = assistant_message_content.index('{')
@@ -179,14 +178,27 @@ def check_status():
                     response_data = json.loads(json_string)
                     return jsonify({'status': 'completed', 'response': response_data})
                 except (ValueError, json.JSONDecodeError):
-                    # If both methods fail, then there's a real issue with the response format.
-                    print(f"CRITICAL ERROR: Could not find a valid JSON object in the assistant's response. Content was: {assistant_message_content}")
+                    print(f"CRITICAL ERROR: Could not find a valid JSON object in response.")
                     return jsonify({'status': 'failed', 'error': 'Failed to parse structured response from assistant.'})
 
         elif run.status in ['queued', 'in_progress']:
             return jsonify({'status': 'in_progress'})
+        
+        # --- NEW ROBUST ERROR HANDLING BLOCK ---
+        elif run.status in ['failed', 'expired', 'incomplete']:
+            error_message = f"Run ended with status: {run.status}."
+            if run.last_error:
+                error_message += f" Details: {run.last_error.message}"
+            # Check for incomplete_details, which is an object, not a direct attribute
+            elif hasattr(run, 'incomplete_details') and run.incomplete_details and hasattr(run.incomplete_details, 'reason'):
+                 error_message += f" Reason: {run.incomplete_details.reason}"
+            
+            print(f"Error: {error_message}")
+            return jsonify({'status': 'failed', 'error': error_message})
+        
         else:
-            return jsonify({'status': 'failed', 'error': f'Run failed with status: {run.status}'})
+            # A catch-all for any other unexpected status
+            return jsonify({'status': 'failed', 'error': f'Run ended with an unexpected status: {run.status}'})
 
     except Exception as e:
         print(f"Error in check_status endpoint: {e}")
