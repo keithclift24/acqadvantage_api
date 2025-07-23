@@ -73,13 +73,15 @@ def generate_structured_response(thread_id, user_prompt):
             content=user_prompt
         )
 
-        # Create a run to have the assistant process the thread
+        # Create a run to have the assistant process the thread.
+        # The assistant_id is hardcoded to our specific AcqAdvantage assistant.
         run = openai_client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id='asst_QUel0QQc2NvKSYZMBCgtStMb'  # The specific Assistant ID to use
         )
 
-        # Poll for the run to complete, sending a heartbeat to keep the connection alive
+        # Poll for the run to complete, sending a heartbeat to keep the connection alive.
+        # This is critical for preventing timeouts on the client-side during long-running tasks.
         while run.status in ['queued', 'in_progress', 'cancelling']:
             time.sleep(1)
             run = openai_client.beta.threads.runs.retrieve(
@@ -130,9 +132,10 @@ def get_or_create_thread(user_token, user_object_id):
         str: The OpenAI thread ID, or None if an error occurs.
     """
     base_url = "https://toughquilt.backendless.app/api"
+    # The 'user-token' is required by Backendless for authenticating the user.
     headers = {'user-token': user_token, 'Content-Type': 'application/json'}
     try:
-        # Fetch the user's data from Backendless
+        # Fetch the user's data from Backendless to check for an existing thread.
         user_url = f"{base_url}/data/Users/{user_object_id}"
         user_response = requests.get(user_url, headers=headers)
         user_response.raise_for_status()
@@ -172,9 +175,10 @@ def reset_user_thread(user_token, user_object_id):
         bool: True if the thread was reset successfully, False otherwise.
     """
     base_url = "https://toughquilt.backendless.app/api"
+    # The 'user-token' is required by Backendless for authenticating the user.
     headers = {'user-token': user_token, 'Content-Type': 'application/json'}
     try:
-        # Fetch user data to get the current thread ID
+        # Fetch user data from Backendless to get the current thread ID.
         user_url = f"{base_url}/data/Users/{user_object_id}"
         user_response = requests.get(user_url, headers=headers)
         user_response.raise_for_status()
@@ -209,8 +213,10 @@ def health_check():
 @app.route('/start_chat', methods=['POST'])
 def start_chat():
     """
-    Endpoint to initialize a chat session for a user.
-    It calls get_or_create_thread to ensure a valid conversation thread exists.
+    Endpoint to initialize or retrieve a chat session for a user.
+
+    This endpoint ensures that a user has a valid OpenAI thread ID before they
+    start sending messages. It's the first step in the chat workflow.
 
     Requires:
     - 'user-token' in headers.
@@ -220,17 +226,24 @@ def start_chat():
     - JSON with 'thread_id' on success.
     - Error JSON on failure.
     """
+    # --- VALIDATION ---
+    # Ensure the user token is present in the request headers for authentication.
     user_token = request.headers.get('user-token')
     if not user_token:
         return jsonify({'error': 'User token is missing'}), 401
 
+    # Ensure the request body contains valid JSON.
     data = request.get_json()
     if not data or 'objectId' not in data:
         return jsonify({'error': 'objectId is missing from request body'}), 400
 
+    # --- CORE LOGIC ---
+    # Retrieve the user's objectId and get or create a thread for them.
     user_object_id = data['objectId']
     thread_id = get_or_create_thread(user_token, user_object_id)
 
+    # --- RESPONSE ---
+    # Return the thread_id to the client.
     if thread_id:
         return jsonify({'thread_id': thread_id})
     else:
@@ -256,14 +269,18 @@ def ask():
     - A streaming JSON response on success.
     - Error JSON on failure or if the daily limit is reached.
     """
+    # --- VALIDATION ---
+    # Ensure the user token is present in the request headers for authentication.
     user_token = request.headers.get('user-token')
     if not user_token:
         return jsonify({'error': 'User token is missing'}), 401
 
+    # Ensure the request body contains valid JSON.
     data = request.get_json()
     if not data:
         return jsonify({'error': 'Request body is missing'}), 400
 
+    # Extract required data from the JSON payload.
     prompt = data.get('prompt')
     thread_id = data.get('thread_id')
     object_id = data.get('objectId')
@@ -271,21 +288,24 @@ def ask():
     if not prompt or not thread_id or not object_id:
         return jsonify({'error': 'prompt, thread_id, and objectId are required'}), 400
 
+    # --- CORE LOGIC ---
+    # Prepare for Backendless API call.
     base_url = "https://toughquilt.backendless.app/api"
     headers = {'user-token': user_token, 'Content-Type': 'application/json'}
     try:
-        # Fetch user data to check daily limits
+        # Fetch user data from Backendless to check subscription status and daily limits.
         user_url = f"{base_url}/data/Users/{object_id}"
         user_response = requests.get(user_url, headers=headers)
         user_response.raise_for_status()
         user_data = user_response.json()
 
-        # Enforce daily question limit
+        # Enforce a daily question limit to prevent abuse.
+        # This is a simple form of rate limiting.
         daily_count = user_data.get('dailyQuestionCount', 0)
         if daily_count >= 100:
             return jsonify({'error': 'Daily limit reached'}), 429
 
-        # Increment daily question count
+        # Increment the user's daily question count in Backendless.
         new_count = daily_count + 1
         update_payload = {'dailyQuestionCount': new_count}
         update_response = requests.put(user_url, json=update_payload, headers=headers)
@@ -311,17 +331,24 @@ def reset_thread():
     Returns:
     - Success or failure JSON message.
     """
+    # --- VALIDATION ---
+    # Ensure the user token is present in the request headers for authentication.
     user_token = request.headers.get('user-token')
     if not user_token:
         return jsonify({'error': 'User token is missing'}), 401
 
+    # Ensure the request body contains valid JSON.
     data = request.get_json()
     if not data or 'objectId' not in data:
         return jsonify({'error': 'objectId is missing from request body'}), 400
 
+    # --- CORE LOGIC ---
+    # Retrieve the user's objectId and reset their thread.
     user_object_id = data['objectId']
     success = reset_user_thread(user_token, user_object_id)
 
+    # --- RESPONSE ---
+    # Return a success or failure message to the client.
     if success:
         return jsonify({'status': 'success', 'message': 'Thread reset successfully'})
     else:
@@ -345,17 +372,22 @@ def create_checkout_session():
     - JSON with 'checkout_url' on success.
     - Error JSON on failure.
     """
+    # --- VALIDATION ---
+    # Ensure the request body contains valid JSON.
     data = request.get_json()
     if not data:
         return jsonify({'error': 'Request body is missing'}), 400
 
+    # Extract required data from the JSON payload.
     plan_type = data.get('planType')
     user_object_id = data.get('objectId')
 
     if not plan_type or not user_object_id:
         return jsonify({'error': 'planType and objectId are required'}), 400
 
-    # Map plan types to Stripe Price IDs
+    # --- CORE LOGIC ---
+    # Map plan types from the frontend to specific Stripe Price IDs.
+    # These IDs are configured in the Stripe dashboard.
     price_ids = {
         'monthly': 'price_1Rl2mc2Lfw5u3Q4QuJGFFgiG',
         'annual': 'price_1Rl2pB2Lfw5u3Q4QFpW9Olha'
@@ -365,7 +397,9 @@ def create_checkout_session():
         return jsonify({'error': 'Invalid plan_type'}), 400
 
     try:
-        # Create the Stripe Checkout Session
+        # Create the Stripe Checkout Session.
+        # The 'client_reference_id' is crucial as it links the Stripe session
+        # back to our user's objectId in Backendless.
         session = stripe.checkout.Session.create(
             mode='subscription',
             success_url='https://acqadvantage.com/?payment=success',
@@ -396,19 +430,23 @@ def verify_payment_session():
     - Success JSON on successful verification and update.
     - Error JSON on failure.
     """
+    # --- VALIDATION ---
+    # Ensure the request body contains valid JSON.
     data = request.get_json()
     if not data:
         return jsonify({'error': 'Request body is missing'}), 400
 
+    # Extract the session_id from the JSON payload.
     session_id = data.get('session_id')
     if not session_id:
         return jsonify({'error': 'session_id is required'}), 400
 
+    # --- CORE LOGIC ---
     try:
-        # Retrieve the session from Stripe
+        # Retrieve the session from Stripe to get payment details.
         session = stripe.checkout.Session.retrieve(session_id)
 
-        # Verify payment was successful
+        # Verify that the payment was successful before granting access.
         if session.status != 'complete' or session.payment_status != 'paid':
             return jsonify({'error': 'Payment not successful'}), 400
 
@@ -418,7 +456,7 @@ def verify_payment_session():
         if not client_reference_id or not subscription_id:
             return jsonify({'error': 'Missing client_reference_id or subscription_id in session'}), 400
 
-        # Find the user's subscription record in Backendless
+        # Use the client_reference_id to find the user's subscription record in Backendless.
         base_url = "https://toughquilt.backendless.app/api"
         query_url = f"{base_url}/data/Subscriptions"
         query_params = {'where': f"ownerId.objectId = '{client_reference_id}'"}
@@ -438,6 +476,8 @@ def verify_payment_session():
         update_response = requests.put(update_url, json=update_payload)
         update_response.raise_for_status()
 
+        # --- RESPONSE ---
+        # Return a success status to the client.
         return jsonify({'status': 'success'}), 200
 
     except Exception as e:
@@ -461,12 +501,15 @@ def stripe_webhook():
     Returns:
     - 200 OK on success, 400 on error.
     """
+    # --- VALIDATION ---
+    # Retrieve the raw payload and the Stripe-Signature header.
     payload = request.get_data()
     sig_header = request.headers.get('Stripe-Signature')
 
     if not sig_header:
         return jsonify({'error': 'Missing Stripe-Signature header'}), 400
 
+    # --- CORE LOGIC ---
     try:
         # Verify the event came from Stripe
         event = stripe.Webhook.construct_event(
@@ -482,10 +525,10 @@ def stripe_webhook():
         subscription_id = session.get('subscription')
 
         if not client_reference_id or not subscription_id:
-            # Acknowledge receipt even if data is missing to prevent Stripe retries
+            # Acknowledge receipt even if data is missing to prevent Stripe from retrying.
             return jsonify({'status': 'success'}), 200
 
-        # Find and update the user's subscription in Backendless
+        # Find and update the user's subscription in Backendless using the client_reference_id.
         base_url = "https://toughquilt.backendless.app/api"
         query_url = f"{base_url}/data/Subscriptions"
         query_params = {'where': f"ownerId.objectId = '{client_reference_id}'"}
@@ -510,11 +553,12 @@ def stripe_webhook():
             # Return success to prevent Stripe from resending the webhook
             return jsonify({'status': 'success'}), 200
 
-    # Acknowledge other event types
+    # Acknowledge other event types to prevent Stripe from resending.
     return jsonify({'status': 'success'}), 200
 
 
 # --- MAIN EXECUTION ---
+# This block runs the application when the script is executed directly.
 if __name__ == '__main__':
     # Runs the Flask app in debug mode for development.
     # In a production environment, a proper WSGI server like Gunicorn or uWSGI should be used.

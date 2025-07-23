@@ -13,6 +13,7 @@ This is a Flask-based API that serves as a backend for the AcqAdvantage applicat
 
 ```
 .
+├── .env                # Environment variables (not committed)
 ├── .gitignore
 ├── app.py              # Main Flask application file
 ├── README.md           # This file
@@ -62,6 +63,16 @@ STRIPE_WEBHOOK_SECRET='your_stripe_webhook_secret'
 - `OPENAI_API_KEY`: Your API key for the OpenAI service.
 - `STRIPE_SECRET_KEY`: Your secret key for the Stripe API.
 - `STRIPE_WEBHOOK_SECRET`: Your webhook signing secret from Stripe.
+
+## Dependencies
+
+This project relies on several key Python libraries:
+
+- **Flask**: A lightweight web framework for creating the API server.
+- **OpenAI**: The official Python client for the OpenAI API.
+- **Stripe**: The official Python client for the Stripe payment processing API.
+- **Backendless**: While there is no official Python SDK used here, the `requests` library is used to interact with the Backendless REST API.
+- **python-dotenv**: For managing environment variables.
 
 ## Running the Application
 
