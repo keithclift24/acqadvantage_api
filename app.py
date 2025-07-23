@@ -25,6 +25,7 @@ import stripe
 from dotenv import load_dotenv
 from flask_cors import CORS
 import logging
+import socket
 
 # Load environment variables from a .env file for secure configuration.
 # This is crucial for keeping API keys and secrets out of the source code.
@@ -120,27 +121,31 @@ def generate_structured_response(thread_id, user_prompt):
 def get_or_create_thread(user_token, user_object_id):
     logging.basicConfig(level=logging.INFO, force=True)
     logging.info(f"--- Starting get_or_create_thread for objectId: {user_object_id} ---")
+    # --- NEW DEBUG LOGIC ---
+    try:
+        hostname = "toughquilt.backendless.app"
+        ip_address = socket.gethostbyname(hostname)
+        logging.info(f"VERIFICATION: Resolved '{hostname}' to IP address: {ip_address}")
+    except Exception as e:
+        logging.error(f"VERIFICATION FAILED: Could not resolve hostname: {e}")
+    # --- END NEW DEBUG LOGIC ---
     base_url = "https://toughquilt.backendless.app/api"
     headers = {'user-token': user_token, 'Content-Type': 'application/json'}
     user_url = f"{base_url}/data/Users/{user_object_id}"
     try:
-        # Step 1: Fetch user data from Backendless
         logging.info("Step 1: Fetching user data from Backendless.")
         user_response = requests.get(user_url, headers=headers)
         user_response.raise_for_status()
         user_data = user_response.json()
         logging.info("Step 1 SUCCESS: User data fetched.")
-        # Step 2: Check for existing thread
         if 'currentThreadId' in user_data and user_data['currentThreadId']:
             existing_thread_id = user_data['currentThreadId']
             logging.info(f"Step 2 SUCCESS: Found existing threadId: {existing_thread_id}")
             return existing_thread_id
-        # Step 3: Create new OpenAI thread
         logging.info("Step 3: No existing thread found. Creating new thread with OpenAI.")
         thread = openai_client.beta.threads.create()
         new_thread_id = thread.id
         logging.info(f"Step 3 SUCCESS: Created new threadId: {new_thread_id}")
-        # Step 4: Update user in Backendless
         logging.info(f"Step 4: Updating user record in Backendless with new threadId.")
         update_payload = {'currentThreadId': new_thread_id}
         update_response = requests.put(user_url, json=update_payload, headers=headers)
