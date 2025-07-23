@@ -72,17 +72,28 @@ def get_or_create_thread(user_token, user_object_id):
     base_url = "https://toughquilt.backendless.app/api"
     headers = {'user-token': user_token, 'Content-Type': 'application/json'}
     try:
+        print("DEBUG: get_or_create_thread - STEP 1: Calling Backendless to get user data...")
         user_url = f"{base_url}/data/Users/{user_object_id}"
         user_response = requests.get(user_url, headers=headers)
         user_response.raise_for_status()
         user_data = user_response.json()
+        print("DEBUG: get_or_create_thread - STEP 1: Success.")
+
         if 'currentThreadId' in user_data and user_data['currentThreadId']:
+            print("DEBUG: get_or_create_thread - STEP 2: Found existing thread ID. Returning.")
             return user_data['currentThreadId']
+
+        print("DEBUG: get_or_create_thread - STEP 2: No thread ID found. Calling OpenAI to create a new thread...")
         thread = openai_client.beta.threads.create()
         new_thread_id = thread.id
+        print(f"DEBUG: get_or_create_thread - STEP 2: Success. New thread ID is {new_thread_id}")
+
+        print("DEBUG: get_or_create_thread - STEP 3: Calling Backendless to save the new thread ID...")
         update_payload = {'currentThreadId': new_thread_id}
         update_response = requests.put(user_url, json=update_payload, headers=headers)
         update_response.raise_for_status()
+        print("DEBUG: get_or_create_thread - STEP 3: Success.")
+
         return new_thread_id
     except Exception as e:
         print(f"An unexpected error occurred in get_or_create_thread: {e}")
