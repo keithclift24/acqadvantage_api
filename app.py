@@ -26,6 +26,7 @@ from dotenv import load_dotenv
 from flask_cors import CORS
 import logging
 import socket
+import backendless
 
 # Load environment variables from a .env file for secure configuration.
 # This is crucial for keeping API keys and secrets out of the source code.
@@ -36,6 +37,11 @@ load_dotenv()
 # to allow requests from the frontend domain.
 app = Flask(__name__)
 CORS(app)
+
+# --- INITIALIZE BACKENDLESS SDK ---
+BACKENDLESS_APP_ID = os.getenv('BACKENDLESS_APP_ID')
+BACKENDLESS_REST_API_KEY = os.getenv('BACKENDLESS_REST_API_KEY')
+backendless.init_app(BACKENDLESS_APP_ID, BACKENDLESS_REST_API_KEY)
 
 # Initialize the OpenAI client with the API key from environment variables.
 openai_client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
@@ -119,42 +125,31 @@ def generate_structured_response(thread_id, user_prompt):
 
 
 def get_or_create_thread(user_token, user_object_id):
-    logging.basicConfig(level=logging.INFO, force=True)
-    logging.info(f"--- Starting get_or_create_thread for objectId: {user_object_id} ---")
-    # --- NEW DEBUG LOGIC ---
     try:
-        hostname = "toughquilt.backendless.app"
-        ip_address = socket.gethostbyname(hostname)
-        logging.info(f"VERIFICATION: Resolved '{hostname}' to IP address: {ip_address}")
-    except Exception as e:
-        logging.error(f"VERIFICATION FAILED: Could not resolve hostname: {e}")
-    # --- END NEW DEBUG LOGIC ---
-    base_url = "https://toughquilt.backendless.app/api"
-    headers = {'user-token': user_token, 'Content-Type': 'application/json'}
-    user_url = f"{base_url}/data/Users/{user_object_id}"
-    try:
-        logging.info("Step 1: Fetching user data from Backendless.")
-        user_response = requests.get(user_url, headers=headers)
-        user_response.raise_for_status()
-        user_data = user_response.json()
-        logging.info("Step 1 SUCCESS: User data fetched.")
+        # Step 1: Set the user token for the SDK
+        user_service = backendless.user_service
+        user_service.set_user_token(user_token)
+        
+        # Step 2: Fetch user data using the Backendless SDK
+        users_table = backendless.data.of("Users")
+        user_data = users_table.find_by_id(user_object_id)
+        
+        # Step 3: Check for existing thread
         if 'currentThreadId' in user_data and user_data['currentThreadId']:
-            existing_thread_id = user_data['currentThreadId']
-            logging.info(f"Step 2 SUCCESS: Found existing threadId: {existing_thread_id}")
-            return existing_thread_id
-        logging.info("Step 3: No existing thread found. Creating new thread with OpenAI.")
+            return user_data['currentThreadId']
+
+        # Step 4: Create new OpenAI thread if none exists
         thread = openai_client.beta.threads.create()
         new_thread_id = thread.id
-        logging.info(f"Step 3 SUCCESS: Created new threadId: {new_thread_id}")
-        logging.info(f"Step 4: Updating user record in Backendless with new threadId.")
-        update_payload = {'currentThreadId': new_thread_id}
-        update_response = requests.put(user_url, json=update_payload, headers=headers)
-        update_response.raise_for_status()
-        logging.info("Step 4 SUCCESS: User record updated.")
+
+        # Step 5: Update user in Backendless using the SDK
+        user_data['currentThreadId'] = new_thread_id
+        users_table.save(user_data)
         
         return new_thread_id
+
     except Exception as e:
-        logging.error(f"--- An unexpected error occurred in get_or_create_thread: {e} ---", exc_info=True)
+        print(f"--- An unexpected error occurred in get_or_create_thread: {e} ---")
         return None
 
 
