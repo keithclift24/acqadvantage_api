@@ -1,4 +1,5 @@
 import requests
+import httpx
 import os
 from flask import Flask, jsonify, request, Response, stream_with_context # Ensure stream_with_context is imported
 import openai
@@ -74,7 +75,7 @@ def get_or_create_thread(user_token, user_object_id):
     try:
         print("DEBUG: get_or_create_thread - STEP 1: Calling Backendless to get user data...")
         user_url = f"{base_url}/data/Users/{user_object_id}"
-        user_response = requests.get(user_url, headers=headers)
+        user_response = httpx.get(user_url, headers=headers)
         user_response.raise_for_status()
         user_data = user_response.json()
         print("DEBUG: get_or_create_thread - STEP 1: Success.")
