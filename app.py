@@ -24,6 +24,7 @@ import time
 import stripe
 from dotenv import load_dotenv
 from flask_cors import CORS
+import logging
 
 # Load environment variables from a .env file for secure configuration.
 # This is crucial for keeping API keys and secrets out of the source code.
@@ -117,45 +118,38 @@ def generate_structured_response(thread_id, user_prompt):
 
 
 def get_or_create_thread(user_token, user_object_id):
-    """
-    Retrieves an existing OpenAI thread ID for a user or creates a new one.
-
-    This function checks the user's record in the Backendless database. If a
-    'currentThreadId' exists, it's returned. Otherwise, a new thread is created
-    via the OpenAI API, and its ID is saved back to the user's record in Backendless.
-
-    Args:
-        user_token (str): The authentication token for the user.
-        user_object_id (str): The unique ID of the user in the Backendless database.
-
-    Returns:
-        str: The OpenAI thread ID, or None if an error occurs.
-    """
+    logging.basicConfig(level=logging.INFO, force=True)
+    logging.info(f"--- Starting get_or_create_thread for objectId: {user_object_id} ---")
     base_url = "https://toughquilt.backendless.app/api"
-    # The 'user-token' is required by Backendless for authenticating the user.
     headers = {'user-token': user_token, 'Content-Type': 'application/json'}
+    user_url = f"{base_url}/data/Users/{user_object_id}"
     try:
-        # Fetch the user's data from Backendless to check for an existing thread.
-        user_url = f"{base_url}/data/Users/{user_object_id}"
+        # Step 1: Fetch user data from Backendless
+        logging.info("Step 1: Fetching user data from Backendless.")
         user_response = requests.get(user_url, headers=headers)
         user_response.raise_for_status()
         user_data = user_response.json()
-
-        # Return existing thread ID if it exists
+        logging.info("Step 1 SUCCESS: User data fetched.")
+        # Step 2: Check for existing thread
         if 'currentThreadId' in user_data and user_data['currentThreadId']:
-            return user_data['currentThreadId']
-
-        # If no thread ID, create a new one
+            existing_thread_id = user_data['currentThreadId']
+            logging.info(f"Step 2 SUCCESS: Found existing threadId: {existing_thread_id}")
+            return existing_thread_id
+        # Step 3: Create new OpenAI thread
+        logging.info("Step 3: No existing thread found. Creating new thread with OpenAI.")
         thread = openai_client.beta.threads.create()
         new_thread_id = thread.id
-
-        # Update the user's record in Backendless with the new thread ID
+        logging.info(f"Step 3 SUCCESS: Created new threadId: {new_thread_id}")
+        # Step 4: Update user in Backendless
+        logging.info(f"Step 4: Updating user record in Backendless with new threadId.")
         update_payload = {'currentThreadId': new_thread_id}
         update_response = requests.put(user_url, json=update_payload, headers=headers)
         update_response.raise_for_status()
+        logging.info("Step 4 SUCCESS: User record updated.")
+        
         return new_thread_id
     except Exception as e:
-        print(f"An unexpected error occurred in get_or_create_thread: {e}")
+        logging.error(f"--- An unexpected error occurred in get_or_create_thread: {e} ---", exc_info=True)
         return None
 
 
