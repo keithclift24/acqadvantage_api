@@ -161,7 +161,7 @@ def get_or_create_thread(user_token, user_object_id):
 
 def reset_user_thread(user_token, user_object_id):
     """
-    Deletes a user's current OpenAI thread and clears the reference in Backendless.
+    Deletes a user's current OpenAI thread and clears the reference in Backendless. 
 
     This is used when a user wants to start a fresh conversation. It fetches the
     current thread ID from Backendless, deletes it from OpenAI's servers, and then
