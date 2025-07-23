@@ -226,7 +226,6 @@ def start_chat():
     - JSON with 'thread_id' on success.
     - Error JSON on failure.
     """
-    # --- VALIDATION ---
     # Ensure the user token is present in the request headers for authentication.
     user_token = request.headers.get('user-token')
     if not user_token:
@@ -237,12 +236,10 @@ def start_chat():
     if not data or 'objectId' not in data:
         return jsonify({'error': 'objectId is missing from request body'}), 400
 
-    # --- CORE LOGIC ---
     # Retrieve the user's objectId and get or create a thread for them.
     user_object_id = data['objectId']
     thread_id = get_or_create_thread(user_token, user_object_id)
 
-    # --- RESPONSE ---
     # Return the thread_id to the client.
     if thread_id:
         return jsonify({'thread_id': thread_id})
@@ -269,7 +266,6 @@ def ask():
     - A streaming JSON response on success.
     - Error JSON on failure or if the daily limit is reached.
     """
-    # --- VALIDATION ---
     # Ensure the user token is present in the request headers for authentication.
     user_token = request.headers.get('user-token')
     if not user_token:
@@ -288,7 +284,6 @@ def ask():
     if not prompt or not thread_id or not object_id:
         return jsonify({'error': 'prompt, thread_id, and objectId are required'}), 400
 
-    # --- CORE LOGIC ---
     # Prepare for Backendless API call.
     base_url = "https://toughquilt.backendless.app/api"
     headers = {'user-token': user_token, 'Content-Type': 'application/json'}
@@ -331,7 +326,6 @@ def reset_thread():
     Returns:
     - Success or failure JSON message.
     """
-    # --- VALIDATION ---
     # Ensure the user token is present in the request headers for authentication.
     user_token = request.headers.get('user-token')
     if not user_token:
@@ -342,12 +336,10 @@ def reset_thread():
     if not data or 'objectId' not in data:
         return jsonify({'error': 'objectId is missing from request body'}), 400
 
-    # --- CORE LOGIC ---
     # Retrieve the user's objectId and reset their thread.
     user_object_id = data['objectId']
     success = reset_user_thread(user_token, user_object_id)
 
-    # --- RESPONSE ---
     # Return a success or failure message to the client.
     if success:
         return jsonify({'status': 'success', 'message': 'Thread reset successfully'})
@@ -372,7 +364,6 @@ def create_checkout_session():
     - JSON with 'checkout_url' on success.
     - Error JSON on failure.
     """
-    # --- VALIDATION ---
     # Ensure the request body contains valid JSON.
     data = request.get_json()
     if not data:
@@ -385,7 +376,6 @@ def create_checkout_session():
     if not plan_type or not user_object_id:
         return jsonify({'error': 'planType and objectId are required'}), 400
 
-    # --- CORE LOGIC ---
     # Map plan types from the frontend to specific Stripe Price IDs.
     # These IDs are configured in the Stripe dashboard.
     price_ids = {
@@ -430,7 +420,6 @@ def verify_payment_session():
     - Success JSON on successful verification and update.
     - Error JSON on failure.
     """
-    # --- VALIDATION ---
     # Ensure the request body contains valid JSON.
     data = request.get_json()
     if not data:
@@ -441,7 +430,6 @@ def verify_payment_session():
     if not session_id:
         return jsonify({'error': 'session_id is required'}), 400
 
-    # --- CORE LOGIC ---
     try:
         # Retrieve the session from Stripe to get payment details.
         session = stripe.checkout.Session.retrieve(session_id)
@@ -476,7 +464,6 @@ def verify_payment_session():
         update_response = requests.put(update_url, json=update_payload)
         update_response.raise_for_status()
 
-        # --- RESPONSE ---
         # Return a success status to the client.
         return jsonify({'status': 'success'}), 200
 
@@ -501,7 +488,6 @@ def stripe_webhook():
     Returns:
     - 200 OK on success, 400 on error.
     """
-    # --- VALIDATION ---
     # Retrieve the raw payload and the Stripe-Signature header.
     payload = request.get_data()
     sig_header = request.headers.get('Stripe-Signature')
@@ -509,7 +495,6 @@ def stripe_webhook():
     if not sig_header:
         return jsonify({'error': 'Missing Stripe-Signature header'}), 400
 
-    # --- CORE LOGIC ---
     try:
         # Verify the event came from Stripe
         event = stripe.Webhook.construct_event(
