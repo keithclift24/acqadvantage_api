@@ -328,6 +328,19 @@ def stripe_webhook():
     return jsonify({'status': 'success'}), 200
 
 
+@app.route('/test-openai')
+def test_openai_connection():
+    try:
+        print("DEBUG: Testing OpenAI connection...")
+        # Make a simple, low-cost API call to list models
+        openai_client.models.list()
+        print("DEBUG: Successfully connected to OpenAI.")
+        return jsonify({"status": "success", "message": "Connection to OpenAI API successful."})
+    except Exception as e:
+        print(f"DEBUG: Failed to connect to OpenAI. Error: {e}")
+        return jsonify({"status": "failed", "error": str(e)}), 500
+
+
 # --- MAIN EXECUTION ---
 if __name__ == '__main__':
     app.run(debug=True)
