@@ -1,4 +1,3 @@
-import requests
 import httpx
 import os
 from flask import Flask, jsonify, request, Response, stream_with_context # Ensure stream_with_context is imported
@@ -91,7 +90,7 @@ def get_or_create_thread(user_token, user_object_id):
 
         print("DEBUG: get_or_create_thread - STEP 3: Calling Backendless to save the new thread ID...")
         update_payload = {'currentThreadId': new_thread_id}
-        update_response = requests.put(user_url, json=update_payload, headers=headers)
+        update_response = httpx.put(user_url, json=update_payload, headers=headers)
         update_response.raise_for_status()
         print("DEBUG: get_or_create_thread - STEP 3: Success.")
 
@@ -106,14 +105,14 @@ def reset_user_thread(user_token, user_object_id):
     headers = {'user-token': user_token, 'Content-Type': 'application/json'}
     try:
         user_url = f"{base_url}/data/Users/{user_object_id}"
-        user_response = requests.get(user_url, headers=headers)
+        user_response = httpx.get(user_url, headers=headers)
         user_response.raise_for_status()
         user_data = user_response.json()
         current_thread_id = user_data.get('currentThreadId')
         if current_thread_id:
             openai_client.beta.threads.delete(thread_id=current_thread_id)
         update_payload = {'currentThreadId': None}
-        update_response = requests.put(user_url, json=update_payload, headers=headers)
+        update_response = httpx.put(user_url, json=update_payload, headers=headers)
         update_response.raise_for_status()
         return True
     except Exception as e:
@@ -164,7 +163,7 @@ def ask():
     headers = {'user-token': user_token, 'Content-Type': 'application/json'}
     try:
         user_url = f"{base_url}/data/Users/{object_id}"
-        user_response = requests.get(user_url, headers=headers)
+        user_response = httpx.get(user_url, headers=headers)
         user_response.raise_for_status()
         user_data = user_response.json()
 
@@ -174,7 +173,7 @@ def ask():
 
         new_count = daily_count + 1
         update_payload = {'dailyQuestionCount': new_count}
-        update_response = requests.put(user_url, json=update_payload, headers=headers)
+        update_response = httpx.put(user_url, json=update_payload, headers=headers)
         update_response.raise_for_status()
 
         return Response(stream_with_context(generate_structured_response(thread_id, prompt)), mimetype='application/json')
@@ -260,7 +259,7 @@ def verify_payment_session():
         query_url = f"{base_url}/data/Subscriptions"
         query_params = {'where': f"ownerId.objectId = '{client_reference_id}'"}
         
-        query_response = requests.get(query_url, params=query_params)
+        query_response = httpx.get(query_url, params=query_params)
         query_response.raise_for_status()
         subscriptions = query_response.json()
         
@@ -271,7 +270,7 @@ def verify_payment_session():
         update_url = f"{base_url}/data/Subscriptions/{subscription_object_id}"
         update_payload = {'status': 'active', 'stripeSubscriptionId': subscription_id}
         
-        update_response = requests.put(update_url, json=update_payload)
+        update_response = httpx.put(update_url, json=update_payload)
         update_response.raise_for_status()
         
         return jsonify({'status': 'success'}), 200
@@ -308,7 +307,7 @@ def stripe_webhook():
         query_params = {'where': f"ownerId.objectId = '{client_reference_id}'"}
         
         try:
-            query_response = requests.get(query_url, params=query_params)
+            query_response = httpx.get(query_url, params=query_params)
             query_response.raise_for_status()
             subscriptions = query_response.json()
             
@@ -319,7 +318,7 @@ def stripe_webhook():
             update_url = f"{base_url}/data/Subscriptions/{subscription_object_id}"
             update_payload = {'status': 'active', 'stripeSubscriptionId': subscription_id}
             
-            update_response = requests.put(update_url, json=update_payload)
+            update_response = httpx.put(update_url, json=update_payload)
             update_response.raise_for_status()
             
         except Exception as e:
