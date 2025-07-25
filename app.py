@@ -1,6 +1,6 @@
 # === IMPORT STATEMENTS ===
 # These lines import external libraries (code packages) that our application needs to work
-
+import pandas as pd  # Already imported, but ensure it's near the top if not
 import httpx          # Library for making HTTP requests to other websites/APIs
 import os             # Library for accessing operating system features like environment variables
 from flask import Flask, jsonify, request, Response, stream_with_context  # Flask web framework components
@@ -668,6 +668,15 @@ def test_openai_connection():
             "status": "failed", 
             "error": str(e)
         }), 500
+
+
+@app.route("/decision-table", methods=["GET"])
+def decision_table():
+    try:
+        df = pd.read_excel("Contract Award Decision Tree.xlsx")  # Make sure file is in root or adjust path
+        return jsonify(df.to_dict(orient="records"))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # === MAIN EXECUTION ===
