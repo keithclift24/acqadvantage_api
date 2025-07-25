@@ -670,10 +670,10 @@ def test_openai_connection():
         }), 500
 
 
-@app.route("/decision-table", methods=["GET"])
-def decision_table():
+@app.route("/decision-table/<sheet>", methods=["GET"])
+def decision_table(sheet):
     try:
-        df = pd.read_excel("Contract Award Decision Tree.xlsx")  # Make sure file is in root or adjust path
+        df = pd.read_excel("Contract Award Decision Tree.xlsx", sheet_name=sheet)
         return jsonify(df.to_dict(orient="records"))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
