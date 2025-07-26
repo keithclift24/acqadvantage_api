@@ -10,6 +10,11 @@ import time           # Library for time-related functions like delays
 import stripe         # Official Stripe library for payment processing
 from dotenv import load_dotenv  # Library to load secret keys from .env file
 from flask_cors import CORS     # Library to handle cross-origin requests (allows websites to call our API)
+from google import generativeai as genai # Google Generative AI library
+from google.generativeai import types   # Google Generative AI types
+import base64         # Library for encoding/decoding data
+from google import genai
+from google.genai import types
 
 # === LOAD CONFIGURATION ===
 # Load secret keys and configuration from .env file
@@ -227,6 +232,183 @@ def reset_user_thread(user_token, user_object_id):
         return False
 
 
+def generate_google_ai_response(user_prompt):
+    """
+    WHAT THIS FUNCTION DOES:
+    This function handles communication with Google's Generative AI. It sends a prompt
+    and streams the response back.
+    
+    PARAMETERS:
+    - user_prompt: The question or message the user wants to send to the AI
+    
+    HOW IT WORKS:
+    1. Sets up the Google AI client.
+    2. Defines the conversation history and context.
+    3. Configures the generation settings.
+    4. Streams the response from the AI.
+    """
+    try:
+        client = genai.Client(
+            vertexai=True,
+            project="acqadvantagefinal",
+            location="global",
+        )
+
+        msg2_text1 = types.Part.from_text(text="""**Analyzing Contractual Processes**
+
+I've begun by initiating a Google search, focusing on the federal government's contracting procedures for projects valued around $300,000. My initial queries include key phrases such as \"federal government contract process\" and \"requirements for awarding a $300,000 government contract\". This should provide a foundational understanding of the overall process and associated regulations. Following this, I intend to clarify the definitions and implications of terms such as \"simplified acquisition threshold.\"
+
+
+**Defining Acquisition Parameters**
+
+I've refined my search strategy. My aim is to differentiate between streamlined versus standard procedures. I'm now zeroing in on \"simplified acquisition threshold\" and \"micro-purchase threshold\". This helps to assess if contracts of this size are subject to exceptions. My aim is to fully appreciate the acquisition parameters that apply to a $300,000 federal contract.
+
+
+**Examining Contract Procedures**
+
+I've reviewed the initial search results concerning federal government contracting. The results highlighted thresholds and procedures. A $300,000 contract's status is unclear, possibly above simplified acquisition in some instances. Simplified acquisition procedures are a key consideration.
+
+
+**Analyzing Acquisition Types**
+
+I'm now focusing on the nuances of various acquisition types. My initial research revealed that the $300,000 threshold's applicability depends on factors beyond the dollar value. The nature of the item or service, specifically commercial versus non-commercial, appears critical. I'm digging into public notification rules and how these vary across different acquisition methods to refine this.
+
+
+**Examining Contract Limits**
+
+I've confirmed the $300,000 contract exceeds the standard SAT. Digging deeper now; I'm exploring the specific exceptions that permit higher thresholds, while focusing on commercial item acquisitions and simplified procedures. I'm hoping to understand the full range of possible procedures.
+
+
+**Defining Acquisition Pathways**
+
+I'm now analyzing the different paths forward, depending on whether the acquisition is for a commercial or non-commercial item. I see the need to clearly delineate the procedures for each, which include detailing publicizing requirements, ensuring competition, and outlining the evaluation process. The aim is to provide a comprehensive guide, and I will soon address set-asides for small businesses, a frequent consideration for these contracts.
+
+
+**Examining Contract Award**
+
+I've been delving deeper into the awarding of this contract, specifically its implications regarding the Simplified Acquisition Threshold. My research has clarified the differences in procedure when a contract surpasses the $250,000 mark, providing a clearer picture of the nuances.
+
+
+**Constructing the Process**
+
+I'm now focusing on synthesizing the disparate pieces of information. My next move involves structuring the knowledge I've collected into a clear, chronological, step-by-step process for awarding a $300,000 contract. I will map out the contracting officer's decision points, integrating the details on commercial items, market research, and solicitation methods, aiming for a concise, usable guide.""")
+        msg2_text2 = types.Part.from_text(text="""## Navigating the Maze: A Step-by-Step Guide to Awarding a $300,000 Federal Contract
+
+Awarding a $300,000 contract in the federal marketplace involves a structured process governed by the Federal Acquisition Regulation (FAR). While seemingly complex, the procedure is designed to ensure fairness, competition, and the responsible use of taxpayer money. The specific steps depend on several key factors, most notably whether the acquisition is for a commercial or non-commercial item.
+
+For a contract of this value, the process generally exceeds the standard **Simplified Acquisition Threshold (SAT)** of $250,000. This means that the more formal and rigorous procedures of the FAR will typically apply, although certain exceptions can still allow for streamlined processes.
+
+Here is a comprehensive breakdown of the typical process:
+
+### Step 1: Requirement Definition and Market Research
+
+The journey begins with a clear definition of the government's needs. An agency must identify the specific goods or services required. Following this, the contracting officer is required to conduct thorough market research to determine the capabilities of the marketplace to meet those needs. This research is crucial as it informs several key decisions in the subsequent steps.
+
+### Step 2: The Commercial Item Determination
+
+A critical juncture in the process is determining whether the required product or service meets the FAR's definition of a \"commercial item.\" This determination has a significant impact on the procedures that follow.
+
+*   **If it is a commercial item:** The acquisition can often be streamlined. For acquisitions of commercial items exceeding the simplified acquisition threshold but not exceeding $6.5 million, contracting activities are encouraged to use the simplified procedures of FAR Subpart 13.5 to the maximum extent practicable.
+
+*   **If it is not a commercial item:** The process will typically follow the more formal procedures outlined in FAR Part 14 (Sealed Bidding) or FAR Part 15 (Contracting by Negotiation).
+
+### Step 3: Publicizing the Requirement
+
+To ensure transparency and promote competition, the proposed contract action must be publicized. For contracts expected to exceed $25,000, a synopsis must be posted to the Government-wide Point of Entry (GPE), which is currently SAM.gov. This notice must typically be published at least 15 days before the issuance of a solicitation. The goal is to increase competition, broaden industry participation, and assist small businesses in finding opportunities.
+
+### Step 4: Small Business Considerations - The \"Rule of Two\"
+
+For any acquisition with an anticipated dollar value exceeding the micro-purchase threshold but not over the simplified acquisition threshold, the requirement is automatically reserved for small businesses, unless an exception applies. For contracts valued at $300,000, which is above the standard SAT, the \"Rule of Two\" comes into play. If the contracting officer has a reasonable expectation that offers will be received from at least two responsible small businesses and that the award will be made at a fair market price, the acquisition must be set aside for small business participation. This determination is a key part of the market research phase.
+
+### Step 5: Choosing the Method of Solicitation and Award
+
+Based on the preceding steps, the contracting officer will select the appropriate method for soliciting offers and awarding the contract.
+
+**Scenario A: The Acquisition is for a Commercial Item or Qualifies for Simplified Procedures**
+
+If the acquisition qualifies for simplified acquisition procedures under FAR Part 13, the process is less formal. The solicitation, often a Request for Quotation (RFQ), can be tailored to the specific needs of the acquisition. The evaluation of offers is also more streamlined, often focusing on factors like price and past performance.
+
+**Scenario B: The Acquisition Follows Formal Procedures**
+
+If the acquisition does not qualify for simplified procedures, the contracting officer will choose between two primary methods:
+
+*   **FAR Part 14: Sealed Bidding:** This method is used when the requirements are clear and unambiguous, and the award will be made solely on the basis of price and price-related factors. The process involves the public opening of bids and award to the responsible bidder with the lowest price.
+
+*   **FAR Part 15: Contracting by Negotiation:** This is the more common method for complex acquisitions. It allows for discussions with offerors and a more nuanced evaluation of proposals based on factors other than just price, such as technical approach and past performance. A Request for Proposals (RFP) is issued, and the government evaluates the proposals against the criteria stated in the solicitation.
+
+### Step 6: Evaluation and Award
+
+Once proposals or bids are received, they are evaluated by a technical evaluation team and the contracting officer. For negotiated procurements, this may involve discussions with the offerors to clarify their proposals. The government will then select the offer that represents the best value.
+
+Following the selection, the contracting officer will award the contract to the successful offeror. For unsuccessful offerors, a debriefing is often available to provide feedback on their proposal.
+
+### Post-Award Requirements
+
+After the contract is awarded, a notice of the award must be publicized if it exceeds $25,000 and is likely to result in subcontracts. The contractor's performance will be monitored throughout the life of the contract.
+
+In conclusion, while the process to award a $300,000 contract is detailed, it is a systematic approach designed to ensure a fair and competitive environment. The key to navigating this process lies in understanding the nature of the requirement, conducting thorough market research, and adhering to the regulations outlined in the FAR.""")
+
+        model = "gemini-2.5-pro"
+        contents = [
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_text(text="""What is the process to award a $300,000 contract action?""")
+                ]
+            ),
+            types.Content(
+                role="model",
+                parts=[
+                    msg2_text1,
+                    msg2_text2
+                ]
+            ),
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_text(text=user_prompt)
+                ]
+            ),
+        ]
+        tools = [
+            types.Tool(retrieval=types.Retrieval(vertex_ai_search=types.VertexAISearch(datastore="projects/acqadvantagefinal/locations/global/collections/default_collection/dataStores/acqadvantage2025feb_1753489559528"))),
+        ]
+
+        generate_content_config = types.GenerateContentConfig(
+            temperature=0.2,
+            top_p=0.95,
+            top_k=40,
+            max_output_tokens=8192,
+            safety_settings=[types.SafetySetting(
+                category="HARM_CATEGORY_HATE_SPEECH",
+                threshold="BLOCK_NONE"
+            ), types.SafetySetting(
+                category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                threshold="BLOCK_NONE"
+            ), types.SafetySetting(
+                category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                threshold="BLOCK_NONE"
+            ), types.SafetySetting(
+                category="HARM_CATEGORY_HARASSMENT",
+                threshold="BLOCK_NONE"
+            )],
+            tools=tools,
+        )
+
+        for chunk in client.models.generate_content_stream(
+            model=model,
+            contents=contents,
+            config=generate_content_config,
+        ):
+            if not chunk.candidates or not chunk.candidates[0].content or not chunk.candidates[0].content.parts:
+                continue
+            yield chunk.text
+
+    except Exception as e:
+        print(f"Error in generate_google_ai_response: {e}")
+        yield json.dumps({"error": f"An error occurred: {str(e)}"})
+
+
 # === API ENDPOINTS ===
 # These are the web addresses (URLs) that other applications can call to use our service
 # Each endpoint is like a specific function that can be accessed over the internet
@@ -355,6 +537,27 @@ def ask():
         # If anything goes wrong, log the error and return a generic error message
         print(f"Error in ask endpoint: {e}")
         return jsonify({'error': 'Internal server error'}), 500
+
+
+@app.route('/ask_google', methods=['POST'])
+def ask_google():
+    """
+    WHAT THIS ENDPOINT DOES:
+    This endpoint sends a prompt to the Google Generative AI and streams the response.
+    
+    URL: POST /ask_google
+    REQUIRES:
+    - prompt (the user's question/message) in the request body
+    
+    RETURNS: A streaming response with the AI's answer.
+    """
+    data = request.get_json()
+    if not data or 'prompt' not in data:
+        return jsonify({'error': 'prompt is missing from request body'}), 400
+    
+    prompt = data['prompt']
+    
+    return Response(stream_with_context(generate_google_ai_response(prompt)), mimetype='text/plain')
 
 
 @app.route('/reset_thread', methods=['POST'])
