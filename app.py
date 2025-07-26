@@ -10,11 +10,9 @@ import time           # Library for time-related functions like delays
 import stripe         # Official Stripe library for payment processing
 from dotenv import load_dotenv  # Library to load secret keys from .env file
 from flask_cors import CORS     # Library to handle cross-origin requests (allows websites to call our API)
-from google import generativeai as genai # Google Generative AI library
+import google.generativeai as genai # Google Generative AI library
 from google.generativeai import types   # Google Generative AI types
 import base64         # Library for encoding/decoding data
-from google import genai
-from google.genai import types
 
 # === LOAD CONFIGURATION ===
 # Load secret keys and configuration from .env file
