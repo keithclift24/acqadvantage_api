@@ -28,7 +28,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # Enable CORS - this allows websites from different domains to use our API
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Set up OpenAI client with our API key (retrieved from environment variables)
 # This allows us to communicate with OpenAI's AI assistant
